@@ -216,6 +216,8 @@ func TestVolcengineProviderQueries(t *testing.T) {
 			fmt.Fprint(w, `{"ResponseMetadata":{},"Result":{"Images":[{"ImageID":"image-1","Name":"Ubuntu","Description":"desc","OSName":"Ubuntu 22.04"}]}}`)
 		case "DescribeInstanceTypes":
 			fmt.Fprint(w, `{"InstanceTypes":[{"InstanceTypeId":"ecs.g1.large","CPU":{"CoreCount":2},"Memory":{"Size":4}}]}`)
+		case "DescribeRegions":
+			fmt.Fprint(w, `{"Result":{"Regions":[{"RegionId":"cn-beijing"},{"RegionId":"cn-guangzhou"}]}}`)
 		case "DescribeZones":
 			fmt.Fprint(w, `{"Result":{"Zones":[{"ZoneId":"cn-beijing-a"},{"ZoneId":"cn-beijing-b"}]}}`)
 		default:
@@ -238,7 +240,11 @@ func TestVolcengineProviderQueries(t *testing.T) {
 	if err != nil || len(specs) != 1 || specs[0].CPU != 2 || specs[0].MemoryMB != 4096 {
 		t.Fatalf("specs = %+v, err = %v", specs, err)
 	}
-	zones, err := p.ListRegions(context.Background())
+	regions, err := p.ListRegions(context.Background())
+	if err != nil || len(regions) != 2 || regions[0] != "cn-beijing" {
+		t.Fatalf("regions = %v, err = %v", regions, err)
+	}
+	zones, err := p.ListZones(context.Background(), "cn-beijing")
 	if err != nil || len(zones) != 2 || zones[0] != "cn-beijing-a" {
 		t.Fatalf("zones = %v, err = %v", zones, err)
 	}

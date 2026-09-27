@@ -23,6 +23,8 @@ type Provider interface {
 	ListImages(ctx context.Context, region string) ([]model.Image, error)
 	ListInstanceTypes(ctx context.Context, region string) ([]model.InstanceTypeSpec, error)
 	ListRegions(ctx context.Context) ([]string, error)
+	// ListZones 列出指定地域下的可用区（创建实例必填 zone）。
+	ListZones(ctx context.Context, region string) ([]string, error)
 }
 
 // APIError 云 OpenAPI 返回的业务错误（透传 API 错误码）。

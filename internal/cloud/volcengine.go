@@ -114,9 +114,30 @@ func (p *VolcengineProvider) ListInstanceTypes(ctx context.Context, region strin
 	return specs, nil
 }
 
-// ListRegions 调用 DescribeZones（火山引擎按可用区枚举，作为地域/zone 选择依据）。
+// ListRegions 调用 DescribeRegions（火山引擎地域列表）。
 // https://www.volcengine.com/docs/6396/76328
 func (p *VolcengineProvider) ListRegions(ctx context.Context) ([]string, error) {
+	body, err := p.callOpenAPI(ctx, "DescribeRegions", url.Values{})
+	if err != nil {
+		return nil, err
+	}
+	raws := firstList(body, []string{"Result", "Regions"}, []string{"Regions"})
+	regions := make([]string, 0, len(raws))
+	for _, raw := range raws {
+		var m map[string]any
+		if json.Unmarshal(raw, &m) != nil {
+			continue
+		}
+		if id := str(m, "RegionId", "Region", "ID"); id != "" {
+			regions = append(regions, id)
+		}
+	}
+	return regions, nil
+}
+
+// ListZones 调用 DescribeZones（火山引擎可用区列表）。
+// https://www.volcengine.com/docs/6396/76328
+func (p *VolcengineProvider) ListZones(ctx context.Context, region string) ([]string, error) {
 	body, err := p.callOpenAPI(ctx, "DescribeZones", url.Values{})
 	if err != nil {
 		return nil, err
