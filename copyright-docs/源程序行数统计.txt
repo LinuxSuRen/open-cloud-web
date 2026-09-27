@@ -1,0 +1,61 @@
+源程序行数统计（OpenCloudLab云主机快速创建平台软件 V1.0）
+统计命令: find . -name '*.go' | xargs wc -l   （排除 *_test.go 与 vendor）
+
+== Go 源程序（不含 *_test.go、vendor）==
+     274 ./cmd/ocw/main.go
+     196 ./internal/api/auth_endpoints.go
+      68 ./internal/api/catalog.go
+     225 ./internal/api/handler.go
+     330 ./internal/api/instances.go
+      69 ./internal/api/model.go
+      54 ./internal/api/store.go
+     205 ./internal/api/users.go
+     161 ./internal/auth/feishu.go
+      72 ./internal/auth/jwt.go
+      89 ./internal/auth/middleware.go
+      55 ./internal/auth/model.go
+      34 ./internal/auth/pat.go
+      46 ./internal/auth/state.go
+     220 ./internal/cloud/alicloud.go
+      90 ./internal/cloud/provider.go
+     326 ./internal/cloud/volcengine.go
+     140 ./internal/config/config.go
+      31 ./internal/model/catalog.go
+      88 ./internal/model/instance.go
+      57 ./internal/model/user.go
+     339 ./internal/scheduler/scheduler.go
+     594 ./internal/store/sqlite.go
+      39 ./internal/store/store.go
+     378 ./internal/tofu/runner.go
+    4180 total
+
+== Go 测试代码（*_test.go，不计入申请行数）==
+     311 ./internal/api/fakes_test.go
+      94 ./internal/auth/feishu_test.go
+     105 ./internal/auth/jwt_test.go
+     128 ./internal/auth/middleware_test.go
+     282 ./internal/cloud/cloud_test.go
+     133 ./internal/config/config_test.go
+      82 ./internal/model/model_test.go
+     401 ./internal/scheduler/scheduler_test.go
+     396 ./internal/store/sqlite_test.go
+      10 ./internal/store/testutil_test.go
+     226 ./internal/tofu/runner_test.go
+    2168 total
+
+== OpenTofu 模板（*.tf）==
+      73 ./internal/tofu/templates/alicloud/main.tf
+      54 ./internal/tofu/templates/alicloud/variables.tf
+      87 ./internal/tofu/templates/volcengine/main.tf
+      54 ./internal/tofu/templates/volcengine/variables.tf
+     268 total
+
+== 脚本与构建文件（*.sh / Dockerfile）==
+      59 ./deploy/Dockerfile
+      15 ./deploy/entrypoint.sh
+     103 ./tools/gen_source_doc.sh
+     177 total
+
+去空行后总行数: 4233
+分页（每页 50 行）总页数: 85
+生成文件: /Users/rick/Workspace/github/linuxsuren/open-cloud-web/copyright-docs/源程序.txt（文档页数 61）
