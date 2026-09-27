@@ -8,8 +8,8 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os/signal"
@@ -20,10 +20,10 @@ import (
 
 	"github.com/linuxsuren/open-cloud-web/internal/api"
 	"github.com/linuxsuren/open-cloud-web/internal/auth"
-	"github.com/linuxsuren/open-cloud-web/internal/secrets"
 	"github.com/linuxsuren/open-cloud-web/internal/config"
 	"github.com/linuxsuren/open-cloud-web/internal/model"
 	"github.com/linuxsuren/open-cloud-web/internal/scheduler"
+	"github.com/linuxsuren/open-cloud-web/internal/secrets"
 	"github.com/linuxsuren/open-cloud-web/internal/store"
 	"github.com/linuxsuren/open-cloud-web/internal/tofu"
 )

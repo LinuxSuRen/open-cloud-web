@@ -116,15 +116,15 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 		CloudAccountID: account.ID, // 销毁/调度重试时凭此恢复账号凭据
 		Name:           name,
 		Provider:       account.Provider, // 取自云账号，客户端不可伪造
-		Region:       req.Region,
-		Zone:         req.Zone,
-		ImageID:      req.ImageID,
-		InstanceType: req.InstanceType,
-		Status:       StatusCreating,
-		DurationSec:  duration,
-		TfWorkspace:  "inst-" + randHex(8),
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		Region:         req.Region,
+		Zone:           req.Zone,
+		ImageID:        req.ImageID,
+		InstanceType:   req.InstanceType,
+		Status:         StatusCreating,
+		DurationSec:    duration,
+		TfWorkspace:    "inst-" + randHex(8),
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	if err := h.Store.CreateInstance(inst); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create instance record")

@@ -114,7 +114,6 @@ func TestCreateInstanceDurationValidation(t *testing.T) {
 	}
 }
 
-
 // seedAccount 为用户 7 创建一个可用云账号，返回其 ID。
 func seedAccount(t *testing.T, store *fakeStore) int64 {
 	t.Helper()
