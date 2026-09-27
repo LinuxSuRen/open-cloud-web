@@ -251,6 +251,7 @@ func (s *SQLiteStore) ListUsers() ([]*model.User, error) {
 	return out, rows.Err()
 }
 
+
 func (s *SQLiteStore) UpdateUser(u *model.User) error {
 	if u == nil || u.ID <= 0 {
 		return fmt.Errorf("store: UpdateUser: invalid user id")
@@ -578,15 +579,18 @@ func (s *SQLiteStore) CreateAuditLog(log *model.AuditLog) error {
 	return nil
 }
 
-func (s *SQLiteStore) ListAuditLogs(limit int) ([]*model.AuditLog, error) {
+func (s *SQLiteStore) ListAuditLogs(limit, offset int) ([]*model.AuditLog, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 	if limit > 1000 {
 		limit = 1000
 	}
+	if offset < 0 {
+		offset = 0
+	}
 	rows, err := s.db.Query(
-		`SELECT id, user_id, action, detail, created_at FROM audit_logs ORDER BY id DESC LIMIT ?`, limit)
+		`SELECT id, user_id, action, detail, created_at FROM audit_logs ORDER BY id DESC LIMIT ? OFFSET ?`, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("store: list audit logs: %w", err)
 	}
@@ -620,4 +624,13 @@ func ensureAffected(res sql.Result, op string, id int64) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// CountAuditLogs 返回审计日志总数（分页用）。
+func (s *SQLiteStore) CountAuditLogs() (int64, error) {
+	var n int64
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM audit_logs`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("store: count audit logs: %w", err)
+	}
+	return n, nil
 }

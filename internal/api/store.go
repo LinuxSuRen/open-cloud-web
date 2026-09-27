@@ -38,7 +38,8 @@ type Store interface {
 	DeleteCloudAccount(id int64) error
 	// audit
 	CreateAuditLog(*AuditLog) error
-	ListAuditLogs(limit int) ([]*AuditLog, error)
+	ListAuditLogs(limit, offset int) ([]*AuditLog, error)
+	CountAuditLogs() (int64, error)
 }
 
 // Runner 是 internal/tofu.Runner 契约的局部视图（签名照抄）。

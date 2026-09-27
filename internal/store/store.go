@@ -41,6 +41,7 @@ type Store interface {
 	DeleteCloudAccount(id int64) error
 	// audit
 	CreateAuditLog(*model.AuditLog) error
-	ListAuditLogs(limit int) ([]*model.AuditLog, error)
+	ListAuditLogs(limit, offset int) ([]*model.AuditLog, error)
+	CountAuditLogs() (int64, error)
 	Close() error
 }
