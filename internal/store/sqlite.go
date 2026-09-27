@@ -275,7 +275,6 @@ func (s *SQLiteStore) ListUsers() ([]*model.User, error) {
 	return out, rows.Err()
 }
 
-
 func (s *SQLiteStore) UpdateUser(u *model.User) error {
 	if u == nil || u.ID <= 0 {
 		return fmt.Errorf("store: UpdateUser: invalid user id")

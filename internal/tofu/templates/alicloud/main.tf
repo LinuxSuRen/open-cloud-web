@@ -12,7 +12,7 @@ terraform {
 
   required_providers {
     alicloud = {
-      source  = "aliyun/alicloud"
+      source = "aliyun/alicloud"
       # 锁定已知可用的 1.24x 系列（>= 约束，允许补丁升级）。
       version = ">= 1.249.0, < 2.0.0"
     }
