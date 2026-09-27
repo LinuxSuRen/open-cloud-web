@@ -1,8 +1,8 @@
 package api
 
 import (
-	"fmt"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -22,7 +22,9 @@ func TestCloudAccountCRUD(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
 	}
-	var acct struct{ ID int64 `json:"id"` }
+	var acct struct {
+		ID int64 `json:"id"`
+	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &acct); err != nil {
 		t.Fatal(err)
 	}
