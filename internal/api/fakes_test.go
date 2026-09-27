@@ -208,13 +208,28 @@ func (s *fakeStore) CreateAuditLog(a *AuditLog) error {
 	return nil
 }
 
-func (s *fakeStore) ListAuditLogs(limit int) ([]*AuditLog, error) {
+func (s *fakeStore) CountAuditLogs() (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.audit) > limit {
-		return append([]*AuditLog(nil), s.audit[len(s.audit)-limit:]...), nil
+	return int64(len(s.audit)), nil
+}
+
+func (s *fakeStore) ListAuditLogs(limit, offset int) ([]*AuditLog, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// fake 追加顺序即 id 升序，倒序分页返回。
+	var desc []*AuditLog
+	for i := len(s.audit) - 1; i >= 0; i-- {
+		desc = append(desc, s.audit[i])
 	}
-	return append([]*AuditLog(nil), s.audit...), nil
+	if offset >= len(desc) {
+		return []*AuditLog{}, nil
+	}
+	desc = desc[offset:]
+	if len(desc) > limit {
+		desc = desc[:limit]
+	}
+	return append([]*AuditLog(nil), desc...), nil
 }
 
 // ---------- cloud account ----------

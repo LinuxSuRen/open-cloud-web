@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strconv"
 	"errors"
 	"net/http"
 	"strings"
@@ -178,12 +179,35 @@ func (h *Handler) deleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listAuditLogs(w http.ResponseWriter, r *http.Request) {
-	logs, err := h.Store.ListAuditLogs(500)
+	q := r.URL.Query()
+	limit, err := strconv.Atoi(q.Get("limit"))
+	if err != nil || limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	page, err := strconv.Atoi(q.Get("page"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+	total, err := h.Store.CountAuditLogs()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to count audit logs")
+		return
+	}
+	logs, err := h.Store.ListAuditLogs(limit, (page-1)*limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list audit logs")
 		return
 	}
-	writeJSON(w, http.StatusOK, logs)
+	if logs == nil {
+		logs = []*AuditLog{}
+	}
+	pages := (total + int64(limit) - 1) / int64(limit)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"logs": logs, "total": total, "page": page, "pageSize": limit, "pages": pages,
+	})
 }
 
 func (h *Handler) audit(userID int64, action, detail string) {

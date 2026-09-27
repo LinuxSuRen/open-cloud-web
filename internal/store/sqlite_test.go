@@ -326,15 +326,15 @@ func TestAuditLog(t *testing.T) {
 			t.Fatalf("CreateAuditLog: %v", err)
 		}
 	}
-	logs, err := s.ListAuditLogs(3)
+	logs, err := s.ListAuditLogs(3, 0)
 	if err != nil || len(logs) != 3 {
 		t.Errorf("ListAuditLogs(3): %v len=%d", err, len(logs))
 	}
 	// 默认/越界 limit
-	if logs, _ := s.ListAuditLogs(0); len(logs) != 5 {
+	if logs, _ := s.ListAuditLogs(0, 0); len(logs) != 5 {
 		t.Errorf("ListAuditLogs(0) should default, len=%d", len(logs))
 	}
-	if logs, _ := s.ListAuditLogs(100000); len(logs) != 5 {
+	if logs, _ := s.ListAuditLogs(100000, 0); len(logs) != 5 {
 		t.Errorf("ListAuditLogs(100000) should cap, len=%d", len(logs))
 	}
 	// 倒序：最新在前
@@ -361,7 +361,7 @@ func TestConcurrency(t *testing.T) {
 			t.Fatalf("concurrent write %d: %v", i, err)
 		}
 	}
-	logs, err := s.ListAuditLogs(1000)
+	logs, err := s.ListAuditLogs(1000, 0)
 	if err != nil || len(logs) != n {
 		t.Errorf("after concurrent writes: %v len=%d", err, len(logs))
 	}
