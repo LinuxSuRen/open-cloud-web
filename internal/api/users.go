@@ -76,7 +76,9 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 		Role:           role,
 		Status:         auth.StatusActive,
 		Provider:       "local",
+		ProviderSub:    req.Username, // users(provider, provider_sub) 唯一索引要求
 		MaxDurationSec: req.MaxDurationSec,
+		PasswordHash:   string(hash), // 仅 bcrypt 哈希落库，绝不回显
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -84,21 +86,8 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to create user")
 		return
 	}
-	// _ = hash 由 store 层持久化（PasswordHash 字段由装配层映射；此处不落地明文）。
-	h.storePasswordHash(u, string(hash))
 	h.audit(auth.UserFromContext(r.Context()).ID, "user.create", req.Username)
 	writeJSON(w, http.StatusCreated, u)
-}
-
-// PasswordHashSetter 是支持保存 bcrypt 哈希的可选 store 能力。
-type PasswordHashSetter interface {
-	SetUserPasswordHash(userID int64, hash string) error
-}
-
-func (h *Handler) storePasswordHash(u *auth.User, hash string) {
-	if s, ok := h.Store.(PasswordHashSetter); ok {
-		_ = s.SetUserPasswordHash(u.ID, hash)
-	}
 }
 
 type patchUserReq struct {

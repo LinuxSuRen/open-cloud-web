@@ -131,12 +131,13 @@ func (h *Handler) applyInstance(inst *Instance) {
 	ctx, cancel := context.WithTimeout(context.Background(), applyTimeout)
 	defer cancel()
 	vars := map[string]string{
-		"region":        inst.Region,
-		"zone":          inst.Zone,
-		"image_id":      inst.ImageID,
-		"instance_type": inst.InstanceType,
-		"instance_name": inst.Name,
-		"bandwidth":     "5",
+		"provider":         inst.Provider, // runner 依据它选择模板与云凭证（必需）
+		"region":           inst.Region,
+		"zone":             inst.Zone,
+		"image_id":         inst.ImageID,
+		"instance_type":    inst.InstanceType,
+		"instance_name":    inst.Name,
+		"public_bandwidth": "5",
 	}
 	done := make(chan error, 1)
 	go func() { done <- h.Tofu.Apply(ctx, inst.TfWorkspace, vars) }()
@@ -310,7 +311,14 @@ func (h *Handler) destroyInstance(id int64, workspace string) {
 	ctx, cancel := context.WithTimeout(context.Background(), applyTimeout)
 	defer cancel()
 	if err := h.Tofu.Destroy(ctx, workspace); err != nil {
-		h.markFailed(id, "destroy failed: "+err.Error())
+		// 销毁失败保持 Destroying 并记录原因，交给调度器退避重试——
+		// 绝不置 Failed：Failed 不会被调度器扫描，云资源将泄漏无人回收。
+		if inst, gerr := h.Store.GetInstance(id); gerr == nil {
+			inst.Status = StatusDestroying
+			inst.ErrorMessage = "destroy failed: " + err.Error()
+			inst.UpdatedAt = h.t()
+			_ = h.Store.UpdateInstance(inst)
+		}
 		return
 	}
 	if inst, err := h.Store.GetInstance(id); err == nil {

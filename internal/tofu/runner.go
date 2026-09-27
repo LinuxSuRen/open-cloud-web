@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -266,13 +267,19 @@ func ensureWorkspace(wsDir, provider string, templates fs.FS) error {
 
 // writeTFVars 把 vars 序列化为 terraform.tfvars.json；
 // "provider" 仅用于路由模板/凭证，不写入（模板未声明该变量）。
+// 纯数字字符串写成 JSON number，以匹配模板中 number 类型的变量
+// （如 public_bandwidth），否则 tofu 会因类型不匹配拒绝加载。
 func writeTFVars(wsDir string, vars map[string]string) error {
-	clean := make(map[string]string, len(vars))
+	clean := make(map[string]any, len(vars))
 	for k, v := range vars {
 		if k == "provider" {
 			continue
 		}
-		clean[k] = v
+		if n, err := strconv.Atoi(v); err == nil {
+			clean[k] = n
+		} else {
+			clean[k] = v
+		}
 	}
 	data, err := json.MarshalIndent(clean, "", "  ")
 	if err != nil {
@@ -349,16 +356,18 @@ func (r *runner) apply(ctx context.Context, wsDir string, env []string) error {
 }
 
 // run 执行一个普通 tofu 子命令（init/destroy/output），捕获输出。
+// stdout 与 stderr 各用独立 buffer：exec 对两路输出各起一个 goroutine
+// 并发拷贝，共用一个非线程安全的 buffer 会构成数据竞争。
 func (r *runner) run(ctx context.Context, wsDir string, env []string, stdout io.Writer, args ...string) error {
 	cmd := exec.CommandContext(ctx, r.cfg.TofuPath, args...)
 	cmd.Dir = wsDir
 	cmd.Env = env
-	var combined bytes.Buffer
-	cmd.Stdout = &combined
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
 	if stdout != nil {
-		cmd.Stdout = io.MultiWriter(&combined, stdout)
+		cmd.Stdout = io.MultiWriter(&outBuf, stdout)
 	}
-	cmd.Stderr = &combined
+	cmd.Stderr = &errBuf
 	err := cmd.Run()
 	if err == nil {
 		return nil
@@ -366,7 +375,11 @@ func (r *runner) run(ctx context.Context, wsDir string, env []string, stdout io.
 	if ctx.Err() != nil {
 		return fmt.Errorf("%w（%s）", ctx.Err(), err)
 	}
-	return fmt.Errorf("%s", clip(strings.TrimSpace(combined.String()), 2000))
+	combined := strings.TrimSpace(errBuf.String())
+	if combined == "" {
+		combined = strings.TrimSpace(outBuf.String())
+	}
+	return fmt.Errorf("%s", clip(combined, 2000))
 }
 
 // clip 截断过长输出，避免错误信息撑爆日志。

@@ -67,6 +67,7 @@ func (h *Handler) Routes() http.Handler {
 	public.HandleFunc("POST /api/v1/auth/feishu/login", h.feishuLogin)
 	public.HandleFunc("GET /api/v1/auth/feishu/callback", h.feishuCallback)
 	public.HandleFunc("POST /api/v1/auth/token", h.exchangeToken)
+	public.HandleFunc("POST /api/v1/auth/login", h.login)
 
 	// v1 认证端点。
 	authed := http.NewServeMux()

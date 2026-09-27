@@ -95,7 +95,7 @@ func TestApplySuccessAndOutput(t *testing.T) {
 		}
 	}
 	tfvars, _ := os.ReadFile(filepath.Join(ws, "terraform.tfvars.json"))
-	var got map[string]string
+	var got map[string]any
 	if err := json.Unmarshal(tfvars, &got); err != nil {
 		t.Fatal(err)
 	}
@@ -104,6 +104,9 @@ func TestApplySuccessAndOutput(t *testing.T) {
 	}
 	if got["region"] != "cn-hangzhou" {
 		t.Fatalf("tfvars 内容异常: %v", got)
+	}
+	if got["public_bandwidth"] != float64(5) {
+		t.Fatalf("public_bandwidth 应为 JSON number: %v", got["public_bandwidth"])
 	}
 	if strings.Contains(string(tfvars), "AKTEST") || strings.Contains(string(tfvars), "SKTEST") {
 		t.Fatal("凭证泄漏到磁盘")

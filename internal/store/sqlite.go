@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS users (
     status          TEXT    NOT NULL,
     provider        TEXT    NOT NULL,
     provider_sub    TEXT    NOT NULL DEFAULT '',
+    password_hash    TEXT    NOT NULL DEFAULT '',
     max_duration_sec INTEGER NOT NULL DEFAULT 0,
     created_at      TEXT    NOT NULL,
     updated_at      TEXT    NOT NULL
@@ -158,10 +159,10 @@ func (s *SQLiteStore) CreateUser(u *model.User) error {
 	u.CreatedAt, u.UpdatedAt = u.CreatedAt.UTC(), u.UpdatedAt.UTC()
 
 	res, err := s.db.Exec(
-		`INSERT INTO users (username, display_name, email, role, status, provider, provider_sub, max_duration_sec, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO users (username, display_name, email, role, status, provider, provider_sub, max_duration_sec, password_hash, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		u.Username, u.DisplayName, u.Email, string(u.Role), string(u.Status),
-		u.Provider, u.ProviderSub, u.MaxDurationSec, fmtTime(u.CreatedAt), fmtTime(u.UpdatedAt),
+		u.Provider, u.ProviderSub, u.MaxDurationSec, u.PasswordHash, fmtTime(u.CreatedAt), fmtTime(u.UpdatedAt),
 	)
 	if err != nil {
 		return fmt.Errorf("store: create user %q: %w", u.Username, err)
@@ -174,13 +175,13 @@ func (s *SQLiteStore) CreateUser(u *model.User) error {
 	return nil
 }
 
-const userCols = `id, username, display_name, email, role, status, provider, provider_sub, max_duration_sec, created_at, updated_at`
+const userCols = `id, username, display_name, email, role, status, provider, provider_sub, max_duration_sec, password_hash, created_at, updated_at`
 
 func scanUser(row interface{ Scan(...any) error }) (*model.User, error) {
 	var u model.User
 	var role, status, createdAt, updatedAt string
 	err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &role, &status,
-		&u.Provider, &u.ProviderSub, &u.MaxDurationSec, &createdAt, &updatedAt)
+		&u.Provider, &u.ProviderSub, &u.MaxDurationSec, &u.PasswordHash, &createdAt, &updatedAt)
 	if errorsIs(err) {
 		return nil, ErrNotFound
 	}
@@ -260,6 +261,19 @@ func (s *SQLiteStore) DeleteUser(id int64) error {
 		return fmt.Errorf("store: delete user %d: %w", id, err)
 	}
 	return ensureAffected(res, "delete user", id)
+}
+
+// SetUserPasswordHash 保存本地用户的 bcrypt 哈希（ PasswordHashSetter 能力）。
+// UpdateUser 有意不覆盖 password_hash，避免常规更新抹掉凭据。
+func (s *SQLiteStore) SetUserPasswordHash(userID int64, hash string) error {
+	if userID <= 0 {
+		return fmt.Errorf("store: SetUserPasswordHash: invalid user id %d", userID)
+	}
+	res, err := s.db.Exec(`UPDATE users SET password_hash=? WHERE id=?`, hash, userID)
+	if err != nil {
+		return fmt.Errorf("store: set password hash for user %d: %w", userID, err)
+	}
+	return ensureAffected(res, "set password hash", userID)
 }
 
 // ---------- PAT ----------

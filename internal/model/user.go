@@ -41,6 +41,7 @@ type User struct {
 	Provider       string     `json:"provider"` // "local" | "feishu"
 	ProviderSub    string     `json:"providerSub"`
 	MaxDurationSec int64      `json:"maxDurationSec"` // 管理员设置的单次最长使用时长，<=0 用全局默认
+	PasswordHash   string     `json:"-"`              // 本地用户 bcrypt 哈希，绝不序列化外泄
 	CreatedAt      time.Time  `json:"createdAt"`
 	UpdatedAt      time.Time  `json:"updatedAt"`
 }
