@@ -36,9 +36,9 @@ type User struct {
 	Username       string     `json:"username"`
 	DisplayName    string     `json:"displayName"`
 	Email          string     `json:"email"`
-	Role           Role       `json:"role"`       // RoleAdmin | RoleUser
-	Status         UserStatus `json:"status"`     // StatusActive | StatusDisabled
-	Provider       string     `json:"provider"`   // "local" | "feishu"
+	Role           Role       `json:"role"`     // RoleAdmin | RoleUser
+	Status         UserStatus `json:"status"`   // StatusActive | StatusDisabled
+	Provider       string     `json:"provider"` // "local" | "feishu"
 	ProviderSub    string     `json:"providerSub"`
 	MaxDurationSec int64      `json:"maxDurationSec"` // 管理员设置的单次最长使用时长，<=0 用全局默认
 	CreatedAt      time.Time  `json:"createdAt"`
@@ -50,7 +50,7 @@ type PAT struct {
 	ID         int64      `json:"id"`
 	UserID     int64      `json:"userID"`
 	Name       string     `json:"name"`
-	TokenHash  string     `json:"-"` // SHA-256 hex，绝不外泄
+	TokenHash  string     `json:"-"`         // SHA-256 hex，绝不外泄
 	ExpiresAt  time.Time  `json:"expiresAt"` // 零值表示永不过期
 	CreatedAt  time.Time  `json:"createdAt"`
 	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"` // 可为 nil
