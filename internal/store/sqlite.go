@@ -128,6 +128,30 @@ func (s *SQLiteStore) init() error {
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("store: init schema: %w", err)
 	}
+	return s.migrate()
+}
+
+// migrations 增量列迁移：老库已存在的表不会被 CREATE TABLE IF NOT EXISTS
+// 更新，这里按 (表, 列, DDL) 补齐缺失列，保证升级部署平滑。
+var migrations = []struct{ table, column, ddl string }{
+	{"users", "password_hash", "ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''"},
+	{"instances", "cloud_account_id", "ALTER TABLE instances ADD COLUMN cloud_account_id INTEGER NOT NULL DEFAULT 0"},
+}
+
+func (s *SQLiteStore) migrate() error {
+	for _, m := range migrations {
+		var n int
+		if err := s.db.QueryRow(
+			`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, m.table, m.column,
+		).Scan(&n); err != nil {
+			return fmt.Errorf("store: migrate: inspect %s.%s: %w", m.table, m.column, err)
+		}
+		if n == 0 {
+			if _, err := s.db.Exec(m.ddl); err != nil {
+				return fmt.Errorf("store: migrate: %s: %w", m.ddl, err)
+			}
+		}
+	}
 	return nil
 }
 
