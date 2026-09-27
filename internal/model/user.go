@@ -32,26 +32,31 @@ func (s UserStatus) Valid() bool {
 
 // User 平台用户（local 或飞书 OAuth 来源）。
 type User struct {
-	ID             int64      // 唯一
-	Username       string     // 唯一
-	DisplayName    string     //
-	Email          string     //
-	Role           Role       // RoleAdmin | RoleUser
-	Status         UserStatus // StatusActive | StatusDisabled
-	Provider       string     // "local" | "feishu"
-	ProviderSub    string     // provider 侧唯一标识
-	MaxDurationSec int64      // 管理员设置的单次最长使用时长，<=0 用全局默认
-	CreatedAt      time.Time  //
-	UpdatedAt      time.Time  //
+	ID             int64      `json:"id"`
+	Username       string     `json:"username"`
+	DisplayName    string     `json:"displayName"`
+	Email          string     `json:"email"`
+	Role           Role       `json:"role"`       // RoleAdmin | RoleUser
+	Status         UserStatus `json:"status"`     // StatusActive | StatusDisabled
+	Provider       string     `json:"provider"`   // "local" | "feishu"
+	ProviderSub    string     `json:"providerSub"`
+	MaxDurationSec int64      `json:"maxDurationSec"` // 管理员设置的单次最长使用时长，<=0 用全局默认
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
 }
 
 // PAT 个人访问令牌（CLI 认证用），仅存储 SHA-256 哈希。
 type PAT struct {
-	ID         int64
-	UserID     int64
-	Name       string
-	TokenHash  string // SHA-256 hex
-	ExpiresAt  time.Time
-	CreatedAt  time.Time
-	LastUsedAt *time.Time // 可为 nil
+	ID         int64      `json:"id"`
+	UserID     int64      `json:"userID"`
+	Name       string     `json:"name"`
+	TokenHash  string     `json:"-"` // SHA-256 hex，绝不外泄
+	ExpiresAt  time.Time  `json:"expiresAt"` // 零值表示永不过期
+	CreatedAt  time.Time  `json:"createdAt"`
+	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"` // 可为 nil
+}
+
+// Expired 报告 PAT 是否已过期（ExpiresAt 零值表示永不过期）。
+func (p *PAT) Expired(now time.Time) bool {
+	return p != nil && !p.ExpiresAt.IsZero() && now.After(p.ExpiresAt)
 }

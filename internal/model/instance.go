@@ -67,22 +67,22 @@ func (i *Instance) CanRenew(now time.Time) bool {
 
 // Instance 云主机实例。
 type Instance struct {
-	ID           int64          //
-	UserID       int64          //
-	Name         string         //
-	Provider     string         // "alicloud" | "volcengine"
-	Region       string         //
-	Zone         string         //
-	ImageID      string         //
-	InstanceType string         //
-	Status       InstanceStatus // StatusCreating | StatusRunning | StatusDestroying | StatusDestroyed | StatusFailed
-	ExpiresAt    time.Time      //
-	RenewedAt    *time.Time     // 非 nil 表示已续用一次（每个生命周期最多一次）
-	DurationSec  int64          // 本次申请时长
-	PublicIP     string         //
-	PrivateIP    string         //
-	TfWorkspace  string         // OpenTofu state 工作目录名
-	ErrorMessage string         //
-	CreatedAt    time.Time      //
-	UpdatedAt    time.Time      //
+	ID           int64          `json:"id"`
+	UserID       int64          `json:"userID"`
+	Name         string         `json:"name"`
+	Provider     string         `json:"provider"` // "alicloud" | "volcengine"
+	Region       string         `json:"region"`
+	Zone         string         `json:"zone"`
+	ImageID      string         `json:"imageID"`
+	InstanceType string         `json:"instanceType"`
+	Status       InstanceStatus `json:"status"` // StatusCreating | StatusRunning | StatusDestroying | StatusDestroyed | StatusFailed
+	ExpiresAt    time.Time      `json:"expiresAt"`
+	RenewedAt    *time.Time     `json:"renewedAt,omitempty"` // 非 nil 表示已续用一次（每个生命周期最多一次）
+	DurationSec  int64          `json:"durationSec"`         // 本次申请时长
+	PublicIP     string         `json:"publicIP"`
+	PrivateIP    string         `json:"privateIP"`
+	TfWorkspace  string         `json:"tfWorkspace"` // OpenTofu state 工作目录名
+	ErrorMessage string         `json:"errorMessage,omitempty"`
+	CreatedAt    time.Time      `json:"createdAt"`
+	UpdatedAt    time.Time      `json:"updatedAt"`
 }

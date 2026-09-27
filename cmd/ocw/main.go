@@ -108,7 +108,7 @@ func run() error {
 		},
 	)
 
-	srv := &http.Server{Addr: cfg.ListenAddr, Handler: handler}
+	srv := &http.Server{Addr: cfg.ListenAddr, Handler: handler.Routes()}
 
 	// 9. 信号处理：SIGINT/SIGTERM 优雅关停（等在途 destroy 完成）。
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
