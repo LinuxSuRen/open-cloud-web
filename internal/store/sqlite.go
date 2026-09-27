@@ -55,6 +55,7 @@ CREATE INDEX IF NOT EXISTS idx_pats_user_id ON pats(user_id);
 CREATE TABLE IF NOT EXISTS instances (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id        INTEGER NOT NULL,
+    cloud_account_id INTEGER NOT NULL DEFAULT 0,
     name           TEXT    NOT NULL DEFAULT '',
     provider       TEXT    NOT NULL,
     region         TEXT    NOT NULL DEFAULT '',
@@ -75,6 +76,20 @@ CREATE TABLE IF NOT EXISTS instances (
 );
 CREATE INDEX IF NOT EXISTS idx_instances_status_expires ON instances(status, expires_at);
 CREATE INDEX IF NOT EXISTS idx_instances_user_id ON instances(user_id);
+
+CREATE TABLE IF NOT EXISTS cloud_accounts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    name        TEXT    NOT NULL,
+    provider    TEXT    NOT NULL,
+    access_key  TEXT    NOT NULL,
+    secret_enc  TEXT    NOT NULL,
+    region      TEXT    NOT NULL DEFAULT '',
+    created_at  TEXT    NOT NULL,
+    updated_at  TEXT    NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_cloud_accounts_user_id ON cloud_accounts(user_id);
 
 CREATE TABLE IF NOT EXISTS audit_logs (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -376,14 +391,14 @@ func (s *SQLiteStore) TouchPAT(id int64, usedAt time.Time) error {
 
 // ---------- instance ----------
 
-const instanceCols = `id, user_id, name, provider, region, zone, image_id, instance_type, status,
+const instanceCols = `id, user_id, cloud_account_id, name, provider, region, zone, image_id, instance_type, status,
 expires_at, renewed_at, duration_sec, public_ip, private_ip, tf_workspace, error_message, created_at, updated_at`
 
 func scanInstance(row interface{ Scan(...any) error }) (*model.Instance, error) {
 	var in model.Instance
 	var status, expiresAt, createdAt, updatedAt string
 	var renewedAt sql.NullString
-	err := row.Scan(&in.ID, &in.UserID, &in.Name, &in.Provider, &in.Region, &in.Zone,
+	err := row.Scan(&in.ID, &in.UserID, &in.CloudAccountID, &in.Name, &in.Provider, &in.Region, &in.Zone,
 		&in.ImageID, &in.InstanceType, &status, &expiresAt, &renewedAt, &in.DurationSec,
 		&in.PublicIP, &in.PrivateIP, &in.TfWorkspace, &in.ErrorMessage, &createdAt, &updatedAt)
 	if errorsIs(err) {
@@ -437,10 +452,10 @@ func (s *SQLiteStore) CreateInstance(in *model.Instance) error {
 		renewedAt = fmtTime(*in.RenewedAt)
 	}
 	res, err := s.db.Exec(
-		`INSERT INTO instances (user_id, name, provider, region, zone, image_id, instance_type, status,
+		`INSERT INTO instances (user_id, cloud_account_id, name, provider, region, zone, image_id, instance_type, status,
 			expires_at, renewed_at, duration_sec, public_ip, private_ip, tf_workspace, error_message, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		in.UserID, in.Name, in.Provider, in.Region, in.Zone, in.ImageID, in.InstanceType,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.UserID, in.CloudAccountID, in.Name, in.Provider, in.Region, in.Zone, in.ImageID, in.InstanceType,
 		string(in.Status), fmtTime(in.ExpiresAt), renewedAt, in.DurationSec,
 		in.PublicIP, in.PrivateIP, in.TfWorkspace, in.ErrorMessage, fmtTime(in.CreatedAt), fmtTime(in.UpdatedAt),
 	)
@@ -522,10 +537,10 @@ func (s *SQLiteStore) UpdateInstance(in *model.Instance) error {
 		renewedAt = fmtTime(*in.RenewedAt)
 	}
 	res, err := s.db.Exec(
-		`UPDATE instances SET user_id=?, name=?, provider=?, region=?, zone=?, image_id=?, instance_type=?,
+		`UPDATE instances SET user_id=?, cloud_account_id=?, name=?, provider=?, region=?, zone=?, image_id=?, instance_type=?,
 		 status=?, expires_at=?, renewed_at=?, duration_sec=?, public_ip=?, private_ip=?, tf_workspace=?,
 		 error_message=?, updated_at=? WHERE id=?`,
-		in.UserID, in.Name, in.Provider, in.Region, in.Zone, in.ImageID, in.InstanceType,
+		in.UserID, in.CloudAccountID, in.Name, in.Provider, in.Region, in.Zone, in.ImageID, in.InstanceType,
 		string(in.Status), fmtTime(in.ExpiresAt), renewedAt, in.DurationSec,
 		in.PublicIP, in.PrivateIP, in.TfWorkspace, in.ErrorMessage, fmtTime(in.UpdatedAt), in.ID,
 	)

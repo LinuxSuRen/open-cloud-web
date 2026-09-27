@@ -10,3 +10,6 @@ data/
 # 构建产物
 ocw
 /dist/
+
+# 前端
+webapp/node_modules/

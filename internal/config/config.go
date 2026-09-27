@@ -31,6 +31,7 @@ type Config struct {
 	VolcengineAccessKey  string //
 	VolcengineSecretKey  string //
 	CORSAllowedOrigin    string // 允许的 CORS Origin（空表示不加 CORS 头）
+	SecretKey            string // 云账号 Secret 的 AES 加密密钥（空回落 JWTSecret）
 }
 
 // Defaults 返回带默认值的配置（不读环境变量）。
@@ -69,6 +70,7 @@ func Load() (Config, error) {
 	cfg.VolcengineAccessKey = getEnv("VOLCENGINE_ACCESS_KEY", cfg.VolcengineAccessKey)
 	cfg.VolcengineSecretKey = getEnv("VOLCENGINE_SECRET_KEY", cfg.VolcengineSecretKey)
 	cfg.CORSAllowedOrigin = getEnv("CORS_ALLOWED_ORIGIN", cfg.CORSAllowedOrigin)
+	cfg.SecretKey = getEnv("SECRET_KEY", cfg.SecretKey)
 
 	var err error
 	if cfg.DefaultDurationSec, err = getIntEnv("DEFAULT_DURATION_SEC", cfg.DefaultDurationSec); err != nil {

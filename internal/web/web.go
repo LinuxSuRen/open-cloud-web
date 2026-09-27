@@ -1,4 +1,5 @@
-// Package web 提供内嵌的 Web 控制台（单页应用，go:embed 打进二进制）。
+// Package web 提供内嵌的 Web 控制台（Vue 3 + Vite 构建，go:embed 打进二进制）。
+// 构建方式：cd webapp && npm run build（产物输出到本包 dist/ 目录）。
 package web
 
 import (
@@ -8,13 +9,12 @@ import (
 	"strings"
 )
 
-//go:embed static
-var staticFS embed.FS
+//go:embed all:dist
+var distFS embed.FS
 
-// Handler 返回根路径处理器：非 /api、/healthz 的路径回落到 SPA，
-// 支持后续扩展多个静态文件。
+// Handler 返回根路径处理器：非 /api、/healthz 的路径回落到 SPA。
 func Handler() http.Handler {
-	sub, err := fs.Sub(staticFS, "static")
+	sub, err := fs.Sub(distFS, "dist")
 	if err != nil {
 		panic(err)
 	}

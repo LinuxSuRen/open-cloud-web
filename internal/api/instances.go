@@ -19,13 +19,13 @@ const maxConcurrentCreating = 5
 const applyTimeout = 30 * time.Minute
 
 type createInstanceReq struct {
-	Provider     string `json:"provider"`
-	Region       string `json:"region"`
-	Zone         string `json:"zone"`
-	ImageID      string `json:"imageID"`
-	InstanceType string `json:"instanceType"`
-	DurationSec  int64  `json:"durationSec"`
-	Name         string `json:"name"`
+	CloudAccountID int64  `json:"cloudAccountID"` // 必填：用户添加的云账号
+	Region         string `json:"region"`
+	Zone           string `json:"zone"`
+	ImageID        string `json:"imageID"`
+	InstanceType   string `json:"instanceType"`
+	DurationSec    int64  `json:"durationSec"`
+	Name           string `json:"name"`
 }
 
 var validProviders = map[string]bool{"alicloud": true, "volcengine": true}
@@ -59,8 +59,17 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if !validProviders[req.Provider] {
-		writeError(w, http.StatusBadRequest, "provider must be alicloud or volcengine")
+	if req.CloudAccountID <= 0 {
+		writeError(w, http.StatusBadRequest, "cloudAccountID is required (add a cloud account first)")
+		return
+	}
+	runner, account, err := h.accountRunner(u, req.CloudAccountID)
+	if err != nil {
+		if errors.Is(err, errForbiddenAccount) {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, "cloud account not found")
 		return
 	}
 	for field, val := range map[string]string{
@@ -103,9 +112,10 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	now := h.t()
 	inst := &Instance{
-		UserID:       u.ID,
-		Name:         name,
-		Provider:     req.Provider,
+		UserID:         u.ID,
+		CloudAccountID: account.ID, // 销毁/调度重试时凭此恢复账号凭据
+		Name:           name,
+		Provider:       account.Provider, // 取自云账号，客户端不可伪造
 		Region:       req.Region,
 		Zone:         req.Zone,
 		ImageID:      req.ImageID,
@@ -120,14 +130,14 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to create instance record")
 		return
 	}
-	h.audit(u.ID, "instance.create", fmt.Sprintf("id=%d provider=%s region=%s duration=%ds", inst.ID, inst.Provider, inst.Region, inst.DurationSec))
-	go h.applyInstance(inst)
+	h.audit(u.ID, "instance.create", fmt.Sprintf("id=%d account=%d(%s) provider=%s region=%s duration=%ds", inst.ID, account.ID, account.Name, inst.Provider, inst.Region, inst.DurationSec))
+	go h.applyInstance(runner, inst)
 	writeJSON(w, http.StatusAccepted, inst)
 }
 
 // applyInstance 异步执行 OpenTofu Apply；成功后写入 IP、置 Running，
 // ExpiresAt 从 apply 完成时刻起算；失败置 Failed + ErrorMessage。
-func (h *Handler) applyInstance(inst *Instance) {
+func (h *Handler) applyInstance(runner Runner, inst *Instance) {
 	ctx, cancel := context.WithTimeout(context.Background(), applyTimeout)
 	defer cancel()
 	vars := map[string]string{
@@ -140,7 +150,7 @@ func (h *Handler) applyInstance(inst *Instance) {
 		"public_bandwidth": "5",
 	}
 	done := make(chan error, 1)
-	go func() { done <- h.Tofu.Apply(ctx, inst.TfWorkspace, vars) }()
+	go func() { done <- runner.Apply(ctx, inst.TfWorkspace, vars) }()
 	var applyErr error
 	select {
 	case applyErr = <-done:
@@ -151,7 +161,7 @@ func (h *Handler) applyInstance(inst *Instance) {
 		h.markFailed(inst.ID, "apply failed: "+applyErr.Error())
 		return
 	}
-	publicIP, privateIP, err := h.Tofu.OutputIP(ctx, inst.TfWorkspace)
+	publicIP, privateIP, err := runner.OutputIP(ctx, inst.TfWorkspace)
 	if err != nil {
 		h.markFailed(inst.ID, "output ip failed: "+err.Error())
 		return
@@ -308,9 +318,25 @@ func (h *Handler) deleteInstance(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) destroyInstance(id int64, workspace string) {
+	// 凭实例记录里的云账号恢复凭据（账号被删除时记录明确原因，保持 Destroying）。
+	var runner Runner
+	if inst, err := h.Store.GetInstance(id); err == nil && inst.CloudAccountID > 0 {
+		if r, _, rerr := h.runnerForAccount(inst.CloudAccountID); rerr == nil {
+			runner = r
+		}
+	}
+	if runner == nil {
+		if inst, err := h.Store.GetInstance(id); err == nil {
+			inst.Status = StatusDestroying
+			inst.ErrorMessage = "destroy failed: cloud account unavailable (deleted?)"
+			inst.UpdatedAt = h.t()
+			_ = h.Store.UpdateInstance(inst)
+		}
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), applyTimeout)
 	defer cancel()
-	if err := h.Tofu.Destroy(ctx, workspace); err != nil {
+	if err := runner.Destroy(ctx, workspace); err != nil {
 		// 销毁失败保持 Destroying 并记录原因，交给调度器退避重试——
 		// 绝不置 Failed：Failed 不会被调度器扫描，云资源将泄漏无人回收。
 		if inst, gerr := h.Store.GetInstance(id); gerr == nil {

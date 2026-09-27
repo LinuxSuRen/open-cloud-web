@@ -80,7 +80,8 @@ func TestConcurrentCreatingLimit(t *testing.T) {
 	runner.mu.Unlock()
 	tok := seedUser(t, store, h, "user", 0)
 	srv := h.Routes()
-	body := map[string]any{"provider": "alicloud", "region": "r", "zone": "z", "imageID": "i", "instanceType": "s"}
+	acctID := seedAccount(t, store)
+	body := map[string]any{"cloudAccountID": acctID, "region": "r", "zone": "z", "imageID": "i", "instanceType": "s"}
 	for i := 0; i < 5; i++ {
 		rec := doJSON(t, srv, "POST", "/api/v1/instances", tok, body)
 		if rec.Code != http.StatusAccepted {

@@ -20,33 +20,33 @@ type Config struct {
 	DefaultDurationSec int64  // 默认申请时长（秒）
 	MaxDurationSec     int64  // 全局单次时长上限（<=0 表示不限制）
 	CORSAllowedOrigin  string // 允许的 CORS origin，"*" 或具体 origin；空则不发 CORS 头
+	SecretKey          string // 云账号 Secret 的 AES 加密密钥（空则回落 JWTSecret）
 }
 
 // Handler 是 REST API 的根处理器。
 type Handler struct {
-	Store    Store
-	Auth     auth.Manager
-	Feishu   *auth.FeishuOAuth
-	States   *auth.StateManager
-	Registry CloudRegistry
-	Tofu     Runner
-	Cfg      Config
-	Log      *log.Logger
+	Store     Store
+	Auth      auth.Manager
+	Feishu    *auth.FeishuOAuth
+	States    *auth.StateManager
+	NewRunner RunnerFactory // 按账号凭据构造 tofu Runner
+	Cfg       Config
+	Log       *log.Logger
 
 	now func() time.Time
 }
 
 // NewHandler 构造 Handler；now 仅测试注入用，生产留空即 time.Now。
-func NewHandler(store Store, mgr auth.Manager, feishu *auth.FeishuOAuth, states *auth.StateManager, registry CloudRegistry, tofu Runner, cfg Config) *Handler {
+// cfg.SecretKey 用于云账号 Secret 的 AES 加密；为空时应由装配层传 JWTSecret。
+func NewHandler(store Store, mgr auth.Manager, feishu *auth.FeishuOAuth, states *auth.StateManager, newRunner RunnerFactory, cfg Config) *Handler {
 	return &Handler{
-		Store:    store,
-		Auth:     mgr,
-		Feishu:   feishu,
-		States:   states,
-		Registry: registry,
-		Tofu:     tofu,
-		Cfg:      cfg,
-		Log:      log.Default(),
+		Store:     store,
+		Auth:      mgr,
+		Feishu:    feishu,
+		States:    states,
+		NewRunner: newRunner,
+		Cfg:       cfg,
+		Log:       log.Default(),
 	}
 }
 
@@ -82,9 +82,14 @@ func (h *Handler) Routes() http.Handler {
 	authed.HandleFunc("GET /api/v1/instances/{id}", h.getInstance)
 	authed.HandleFunc("POST /api/v1/instances/{id}/renew", h.renewInstance)
 	authed.HandleFunc("DELETE /api/v1/instances/{id}", h.deleteInstance)
-	authed.HandleFunc("GET /api/v1/providers/{p}/regions", h.listRegions)
-	authed.HandleFunc("GET /api/v1/providers/{p}/images", h.listImages)
-	authed.HandleFunc("GET /api/v1/providers/{p}/instance-types", h.listInstanceTypes)
+
+	// 云账号（用户添加的云提供商认证信息）及其目录查询。
+	authed.HandleFunc("GET /api/v1/cloud-accounts", h.listAccounts)
+	authed.HandleFunc("POST /api/v1/cloud-accounts", h.createAccount)
+	authed.HandleFunc("DELETE /api/v1/cloud-accounts/{id}", h.deleteAccount)
+	authed.HandleFunc("GET /api/v1/cloud-accounts/{id}/regions", h.listAccountRegions)
+	authed.HandleFunc("GET /api/v1/cloud-accounts/{id}/images", h.listAccountImages)
+	authed.HandleFunc("GET /api/v1/cloud-accounts/{id}/instance-types", h.listAccountInstanceTypes)
 	public.Handle("/api/v1/", h.requireAuthWrapper()(authed))
 
 	// v1 管理员端点（认证 + admin 角色）。

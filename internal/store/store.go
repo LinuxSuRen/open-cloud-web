@@ -32,6 +32,13 @@ type Store interface {
 	ListInstancesByUser(userID int64) ([]*model.Instance, error)
 	ListInstancesByStatuses(statuses []model.InstanceStatus) ([]*model.Instance, error)
 	UpdateInstance(*model.Instance) error
+	// cloud account（用户添加的云提供商认证信息）
+	CreateCloudAccount(*model.CloudAccount) error
+	GetCloudAccount(id int64) (*model.CloudAccount, error)
+	ListCloudAccountsByUser(userID int64) ([]*model.CloudAccount, error)
+	ListCloudAccounts() ([]*model.CloudAccount, error)
+	UpdateCloudAccount(*model.CloudAccount) error
+	DeleteCloudAccount(id int64) error
 	// audit
 	CreateAuditLog(*model.AuditLog) error
 	ListAuditLogs(limit int) ([]*model.AuditLog, error)

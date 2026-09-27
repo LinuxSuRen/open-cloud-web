@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/linuxsuren/open-cloud-web/internal/auth"
+	"github.com/linuxsuren/open-cloud-web/internal/model"
+	"github.com/linuxsuren/open-cloud-web/internal/secrets"
 )
 
 func doJSON(t *testing.T, h http.Handler, method, target, token string, body any) *httptest.ResponseRecorder {
@@ -84,7 +86,8 @@ func TestNonAdminForbidden(t *testing.T) {
 func TestCreateInstanceDurationValidation(t *testing.T) {
 	store, _, h := newTestServer(t)
 	tok := seedUser(t, store, h, "user", 0)
-	valid := map[string]any{"provider": "alicloud", "region": "cn-beijing", "zone": "a", "imageID": "img-1", "instanceType": "small"}
+	acctID := seedAccount(t, store)
+	valid := map[string]any{"cloudAccountID": acctID, "region": "cn-beijing", "zone": "a", "imageID": "img-1", "instanceType": "small"}
 
 	// 超全局上限（7200）。
 	rec := doJSON(t, h.Routes(), "POST", "/api/v1/instances", tok, withField(valid, "durationSec", 999999))
@@ -109,6 +112,21 @@ func TestCreateInstanceDurationValidation(t *testing.T) {
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("valid: want 202 got %d body=%s", rec.Code, rec.Body.String())
 	}
+}
+
+
+// seedAccount 为用户 7 创建一个可用云账号，返回其 ID。
+func seedAccount(t *testing.T, store *fakeStore) int64 {
+	t.Helper()
+	enc, err := secrets.Encrypt("test-secret-key-123", "test-enc-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &model.CloudAccount{UserID: 7, Name: "acct", Provider: "alicloud", AccessKey: "AK", SecretEnc: enc}
+	if err := store.CreateCloudAccount(a); err != nil {
+		t.Fatal(err)
+	}
+	return a.ID
 }
 
 func withField(base map[string]any, key string, v any) map[string]any {
@@ -137,7 +155,8 @@ func TestInstanceLifecycleApplyRenewDestroy(t *testing.T) {
 	tok := seedUser(t, store, h, "user", 0)
 	srv := h.Routes()
 
-	body := map[string]any{"provider": "alicloud", "region": "cn-beijing", "zone": "a",
+	acctID := seedAccount(t, store)
+	body := map[string]any{"cloudAccountID": acctID, "region": "cn-beijing", "zone": "a",
 		"imageID": "img-1", "instanceType": "small", "durationSec": 3600, "name": "lab-1"}
 	rec := doJSON(t, srv, "POST", "/api/v1/instances", tok, body)
 	if rec.Code != http.StatusAccepted {
