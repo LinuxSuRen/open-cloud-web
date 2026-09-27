@@ -19,7 +19,7 @@ import (
 )
 
 // VolcengineProvider 基于火山引擎 OpenAPI（AWS SigV4 风格签名，
-// HMAC-SHA256，service "compute"）实现，纯标准库，不引入 SDK。
+// HMAC-SHA256，service "ecs"）实现，纯标准库，不引入 SDK。
 //
 // 签名算法与 API 文档：
 //   - 签名机制: https://www.volcengine.com/docs/6369/67161
@@ -31,7 +31,7 @@ type VolcengineProvider struct {
 	host string
 	// region 签名与请求使用的 region，默认 cn-north-1。
 	region string
-	// service 签名服务名（火山引擎 ECS 归属 "compute" 服务）。
+	// service 签名服务名（火山引擎 OpenAPI 路由按 Credential scope 的 service 定位，ECS 为 "ecs"）。
 	service string
 	// apiVersion X-Version 头（compute 2020-04-01）。
 	apiVersion string
@@ -47,7 +47,7 @@ func NewVolcengineProvider(ak, sk string) *VolcengineProvider {
 		secretKey:  sk,
 		host:       "open.volcengineapi.com",
 		region:     "cn-north-1",
-		service:    "compute",
+		service:    "ecs",
 		apiVersion: "2020-04-01",
 		httpClient: &http.Client{Timeout: httpClientTimeout * time.Second},
 		now:        time.Now,
@@ -56,10 +56,10 @@ func NewVolcengineProvider(ak, sk string) *VolcengineProvider {
 
 func (p *VolcengineProvider) Name() string { return "volcengine" }
 
-// ListImages 调用 ListImages（按镜像类型过滤公共镜像）。
+// ListImages 调用 DescribeImages（公共镜像）。
 // https://www.volcengine.com/docs/6396/76324
 func (p *VolcengineProvider) ListImages(ctx context.Context, region string) ([]model.Image, error) {
-	body, err := p.callOpenAPI(ctx, "ListImages", url.Values{
+	body, err := p.callOpenAPI(ctx, "DescribeImages", url.Values{
 		"PageSize":   {strconv.Itoa(pageSize)},
 		"PageNumber": {"1"},
 		"Visibility": {"public"},
@@ -86,10 +86,10 @@ func (p *VolcengineProvider) ListImages(ctx context.Context, region string) ([]m
 	return images, nil
 }
 
-// ListInstanceTypes 调用 ListInstanceTypes。
+// ListInstanceTypes 调用 DescribeInstanceTypes。
 // https://www.volcengine.com/docs/6396/76330
 func (p *VolcengineProvider) ListInstanceTypes(ctx context.Context, region string) ([]model.InstanceTypeSpec, error) {
-	body, err := p.callOpenAPI(ctx, "ListInstanceTypes", url.Values{
+	body, err := p.callOpenAPI(ctx, "DescribeInstanceTypes", url.Values{
 		"PageSize":   {strconv.Itoa(pageSize)},
 		"PageNumber": {"1"},
 	})
@@ -114,10 +114,10 @@ func (p *VolcengineProvider) ListInstanceTypes(ctx context.Context, region strin
 	return specs, nil
 }
 
-// ListRegions 调用 ListZones（火山引擎按可用区枚举，作为地域/zone 选择依据）。
+// ListRegions 调用 DescribeZones（火山引擎按可用区枚举，作为地域/zone 选择依据）。
 // https://www.volcengine.com/docs/6396/76328
 func (p *VolcengineProvider) ListRegions(ctx context.Context) ([]string, error) {
-	body, err := p.callOpenAPI(ctx, "ListZones", url.Values{})
+	body, err := p.callOpenAPI(ctx, "DescribeZones", url.Values{})
 	if err != nil {
 		return nil, err
 	}
@@ -139,8 +139,11 @@ func (p *VolcengineProvider) ListRegions(ctx context.Context) ([]string, error) 
 // 非 2xx 或 ResponseMetadata.Error 携带错误码时返回 *APIError。
 func (p *VolcengineProvider) callOpenAPI(ctx context.Context, action string, query url.Values) ([]byte, error) {
 	amzDate := p.now().UTC().Format("20060102T150405Z")
+	// 火山引擎要求 Action/Version 位于 query string（并参与规范化签名）。
+	query.Set("Action", action)
+	query.Set("Version", p.apiVersion)
 	auth := volcengineSign(p.secretKey, p.accessKey, p.region, p.service,
-		http.MethodGet, p.host, action, p.apiVersion, amzDate, query)
+		http.MethodGet, p.host, amzDate, query)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		"https://"+p.host+"/?"+canonicalQuery(query), nil)
@@ -149,9 +152,7 @@ func (p *VolcengineProvider) callOpenAPI(ctx context.Context, action string, que
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Host", p.host)
-	req.Header.Set("X-Action", action)
 	req.Header.Set("X-Date", amzDate)
-	req.Header.Set("X-Version", p.apiVersion)
 	req.Header.Set("Authorization", auth)
 
 	resp, err := p.httpClient.Do(req)
@@ -194,14 +195,12 @@ func (p *VolcengineProvider) callOpenAPI(ctx context.Context, action string, que
 //
 // 文档：https://www.volcengine.com/docs/6369/67161
 func volcengineSign(secretKey, accessKey, region, service, httpMethod, host,
-	action, apiVersion, amzDate string, query url.Values) string {
-	signedHeaders := "content-type;host;x-action;x-date;x-version"
+	amzDate string, query url.Values) string {
+	signedHeaders := "content-type;host;x-date"
 	// 每个规范头以 \n 结尾；与后续 Join 的分隔符共同构成空行。
 	canonicalHeaders := "content-type:application/json\n" +
 		"host:" + host + "\n" +
-		"x-action:" + action + "\n" +
-		"x-date:" + amzDate + "\n" +
-		"x-version:" + apiVersion + "\n"
+		"x-date:" + amzDate + "\n"
 	payloadHash := sha256hex("")
 	canonicalRequest := strings.Join([]string{
 		httpMethod,

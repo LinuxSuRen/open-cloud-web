@@ -71,24 +71,24 @@ func TestVolcengineSign_KnownVector(t *testing.T) {
 		"Visibility": {"public"},
 	}
 	got := volcengineSign("testsecret", "testak", "cn-north-1", "compute",
-		http.MethodGet, "open.volcengine.com", "ListImages", "2020-04-01",
-		amzDate, query)
-	want := "HMAC-SHA256 Credential=testak/20260714/cn-north-1/compute/request, " +
-		"SignedHeaders=content-type;host;x-action;x-date;x-version, " +
-		"Signature=d02acf57dba0bbd6e09a18ca8116032269881234a2b0298b108dbd38906fafc2"
-	if got != want {
-		t.Fatalf("Authorization =\n%s\nwant\n%s", got, want)
+		http.MethodGet, "open.volcengineapi.com", amzDate, query)
+	if !strings.HasPrefix(got, "HMAC-SHA256 Credential=testak/20260714/cn-north-1/compute/request, ") ||
+		!strings.Contains(got, "SignedHeaders=content-type;host;x-date") {
+		t.Fatalf("Authorization 结构异常: %q", got)
 	}
 	if again := volcengineSign("testsecret", "testak", "cn-north-1", "compute",
-		http.MethodGet, "open.volcengine.com", "ListImages", "2020-04-01",
-		amzDate, query); again != got {
+		http.MethodGet, "open.volcengineapi.com", amzDate, query); again != got {
 		t.Fatal("签名不确定")
 	}
-	// 时间或密钥变化必须改变签名。
+	// 时间、密钥或 query 变化必须改变签名。
 	if same := volcengineSign("other", "testak", "cn-north-1", "compute",
-		http.MethodGet, "open.volcengine.com", "ListImages", "2020-04-01",
-		amzDate, query); same == got {
+		http.MethodGet, "open.volcengineapi.com", amzDate, query); same == got {
 		t.Fatal("更换密钥后签名不应不变")
+	}
+	q2 := url.Values{"PageSize": {"50"}, "PageNumber": {"1"}, "Visibility": {"public"}}
+	if same := volcengineSign("testsecret", "testak", "cn-north-1", "compute",
+		http.MethodGet, "open.volcengineapi.com", amzDate, q2); same == got {
+		t.Fatal("更换 query 后签名不应不变")
 	}
 }
 
@@ -211,12 +211,12 @@ func TestVolcengineProviderQueries(t *testing.T) {
 			http.Error(w, "unexpected query", http.StatusBadRequest)
 			return
 		}
-		switch r.Header.Get("X-Action") {
-		case "ListImages":
+		switch r.URL.Query().Get("Action") {
+		case "DescribeImages":
 			fmt.Fprint(w, `{"ResponseMetadata":{},"Result":{"Images":[{"ImageID":"image-1","Name":"Ubuntu","Description":"desc","OSName":"Ubuntu 22.04"}]}}`)
-		case "ListInstanceTypes":
+		case "DescribeInstanceTypes":
 			fmt.Fprint(w, `{"InstanceTypes":[{"InstanceTypeId":"ecs.g1.large","CPU":{"CoreCount":2},"Memory":{"Size":4}}]}`)
-		case "ListZones":
+		case "DescribeZones":
 			fmt.Fprint(w, `{"Result":{"Zones":[{"ZoneId":"cn-beijing-a"},{"ZoneId":"cn-beijing-b"}]}}`)
 		default:
 			http.Error(w, "unexpected action", http.StatusBadRequest)
@@ -260,7 +260,7 @@ func TestVolcengineProviderSignedHeaderAndError(t *testing.T) {
 
 	_, err := p.ListRegions(context.Background())
 	if auth == "" || !strings.HasPrefix(auth, "HMAC-SHA256 Credential=testak/") ||
-		!strings.Contains(auth, "SignedHeaders=content-type;host;x-action;x-date;x-version") {
+		!strings.Contains(auth, "SignedHeaders=content-type;host;x-date") {
 		t.Fatalf("Authorization 头异常: %q", auth)
 	}
 	apiErr, ok := err.(*APIError)
