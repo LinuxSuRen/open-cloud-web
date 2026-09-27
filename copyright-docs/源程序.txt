@@ -59,7 +59,12 @@ OpenCloudLab云主机快速创建平台软件  V1.0  第2页/共61页
 		RedirectURL: cfg.FeishuRedirectURL,
 	}
 	// 5. 云提供商 registry（alicloud / volcengine 凭据来自环境变量）。
-	// 具体_PROVIDER 构造函数由 internal/cloud agent 提供；就位后在此 Register。
+	// AK 为空也注册：端点会透传云 API 的鉴权错误，便于定位配置缺失。
+	cloud.Register(cloud.NewAlicloudProvider(cfg.AlicloudAccessKey, cfg.AlicloudSecretKey))
+	cloud.Register(cloud.NewVolcengineProvider(cfg.VolcengineAccessKey, cfg.VolcengineSecretKey))
+	if cfg.AlicloudAccessKey == "" && cfg.VolcengineAccessKey == "" {
+		log.Printf("[ocw] warning: no cloud credentials configured (OCW_ALICLOUD_* / OCW_VOLCENGINE_*)")
+	}
 	// 6. OpenTofu runner（tofu.Runner 契约：Apply/Destroy/OutputIP）。
 	runner := tofu.NewRunner(tofu.Config{
 		TofuPath: cfg.TofuBinary,
@@ -97,13 +102,14 @@ OpenCloudLab云主机快速创建平台软件  V1.0  第2页/共61页
 		runner,
 		api.Config{
 			DefaultDurationSec: cfg.DefaultDurationSec,
-			MaxDurationSec:     cfg.MaxDurationSec,
-		},
-	)
-	srv := &http.Server{Addr: cfg.ListenAddr, Handler: handler}
-	// 9. 信号处理：SIGINT/SIGTERM 优雅关停（等在途 destroy 完成）。
 
 OpenCloudLab云主机快速创建平台软件  V1.0  第3页/共61页
+			MaxDurationSec:     cfg.MaxDurationSec,
+			CORSAllowedOrigin:  cfg.CORSAllowedOrigin,
+		},
+	)
+	srv := &http.Server{Addr: cfg.ListenAddr, Handler: handler.Routes()}
+	// 9. 信号处理：SIGINT/SIGTERM 优雅关停（等在途 destroy 完成）。
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go sched.Run(ctx) // 内部等待在途 destroy 完成后返回
@@ -139,33 +145,27 @@ func bootstrapAdmin(st store.Store, token string) error {
 		}
 	}
 	now := time.Now().UTC()
+	hash, err := bcrypt.GenerateFromPassword([]byte(token), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
 	admin := &model.User{
-		Username:    "admin",
-		DisplayName: "Administrator",
-		Role:        model.RoleAdmin,
-		Status:      model.StatusActive,
-		Provider:    "local",
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		Username:     "admin",
+		DisplayName:  "Administrator",
+		Role:         model.RoleAdmin,
+		Status:       model.StatusActive,
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第4页/共61页
+		Provider:     "local",
+		ProviderSub:  "admin", // users(provider, provider_sub) 唯一索引要求
+		PasswordHash: string(hash),
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 	if err := st.CreateUser(admin); err != nil {
 		return err
 	}
-	// 可选能力：store 支持 SetUserPasswordHash 时保存 bcrypt 哈希。
-	hash, err := bcrypt.GenerateFromPassword([]byte(token), bcrypt.DefaultCost)
-	if err != nil {
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第4页/共61页
-		return err
-	}
-	if s, ok := st.(interface {
-		SetUserPasswordHash(userID int64, hash string) error
-	}); ok {
-		if err := s.SetUserPasswordHash(admin.ID, string(hash)); err != nil {
-			return err
-		}
-	}
-	log.Printf("[ocw] bootstrap admin user created")
+	log.Printf("[ocw] bootstrap admin user created (username=admin, password=OCW_ADMIN_BOOTSTRAP_TOKEN, login via POST /api/v1/auth/login)")
 	return nil
 }
 // storeSchedulerAdapter 把 store.Store（操作 model.Instance）适配为
@@ -197,19 +197,26 @@ func (a *storeSchedulerAdapter) ListInstancesByStatuses(statuses []scheduler.Ins
 	}
 	return out, nil
 }
+// UpdateInstance 采用“读取-合并-写回”：scheduler.Instance 只携带其管辖的
+// 字段（Status/ErrorMessage 等），而 store.UpdateInstance 是全列 UPDATE，
+// 直接写回部分字段会清空 Name/ImageID/PublicIP 等。先取完整记录，
+// 覆盖调度器拥有的字段后再落库。
 func (a *storeSchedulerAdapter) UpdateInstance(i *scheduler.Instance) error {
-	return a.store.UpdateInstance(&model.Instance{
-		ID:           i.ID,
-		UserID:       i.UserID,
-		Status:       model.InstanceStatus(i.Status),
-		TfWorkspace:  i.TfWorkspace,
-		ErrorMessage: i.ErrorMessage,
-		ExpiresAt:    i.ExpiresAt,
-		CreatedAt:    i.CreatedAt,
+	full, err := a.store.GetInstance(i.ID)
+	if err != nil {
+		return err
+	}
 
 OpenCloudLab云主机快速创建平台软件  V1.0  第5页/共61页
-		UpdatedAt:    i.UpdatedAt,
-	})
+	full.Status = model.InstanceStatus(i.Status)
+	full.ErrorMessage = i.ErrorMessage
+	if !i.ExpiresAt.IsZero() {
+		full.ExpiresAt = i.ExpiresAt
+	}
+	if !i.UpdatedAt.IsZero() {
+		full.UpdatedAt = i.UpdatedAt
+	}
+	return a.store.UpdateInstance(full)
 }
 // cloudRegistryAdapter 把 internal/cloud 的全局注册表适配为 api.CloudRegistry。
 type cloudRegistryAdapter struct{}
@@ -251,6 +258,8 @@ func (a cloudProviderAdapter) ListInstanceTypes(ctx context.Context, region stri
 		out = append(out, api.InstanceTypeSpec{
 			ID: s.ID, CPU: s.CPU, MemoryMB: s.MemoryMB, Provider: s.Provider, Region: s.Region,
 		})
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第6页/共61页
 	}
 	return out, nil
 }
@@ -258,8 +267,6 @@ func (a cloudProviderAdapter) ListInstanceTypes(ctx context.Context, region stri
 # syntax=docker/dockerfile:1
 # 多阶段构建：builder 编译纯 Go 二进制（无 CGO），runtime 只带运行时依赖。
 # 构建上下文为仓库根目录：docker build -f deploy/Dockerfile .
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第6页/共61页
 # ---------- builder ----------
 FROM golang:1.27-alpine AS builder
 ARG VERSION=dev
@@ -303,6 +310,8 @@ ENV OCW_LISTEN_ADDR=":8080" \
     OCW_TOFU_TEMPLATES_DIR="/app/templates"
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第7页/共61页
 ENTRYPOINT ["/app/entrypoint.sh"]
 // ===== 文件: deploy/entrypoint.sh =====
 #!/bin/sh
@@ -310,8 +319,6 @@ ENTRYPOINT ["/app/entrypoint.sh"]
 set -eu
 DATA_DIR="${OCW_DATA_DIR:-/app/data}"
 # 初始化 sqlite / workspaces / plugin-cache 目录（挂载卷首次为空）。
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第7页/共61页
 mkdir -p "$DATA_DIR/workspaces" "$DATA_DIR/plugin-cache"
 # 挂载卷属主可能不是 10001，尽量修正（无权限时静默跳过，由挂载配置保证可写）。
 chown -R "$(id -u):$(id -g)" "$DATA_DIR" 2>/dev/null || true
@@ -355,6 +362,8 @@ func (h *Handler) feishuCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	info, err := h.Feishu.Callback(r.Context(), code)
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第8页/共61页
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -362,8 +371,6 @@ func (h *Handler) feishuCallback(w http.ResponseWriter, r *http.Request) {
 	now := h.t()
 	u, err := h.Store.GetUserByProvider("feishu", info.OpenID)
 	if errors.Is(err, auth.ErrNotFound) {
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第8页/共61页
 		u = &auth.User{
 			Username:    "feishu_" + info.OpenID,
 			DisplayName: info.Name,
@@ -407,6 +414,8 @@ func (h *Handler) exchangeToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !auth.IsPAT(req.Token) {
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第9页/共61页
 		writeError(w, http.StatusBadRequest, "token must be a PAT (pat_ocw_...)")
 		return
 	}
@@ -414,8 +423,6 @@ func (h *Handler) exchangeToken(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, auth.ErrNotFound) {
 		writeError(w, http.StatusUnauthorized, "invalid token")
 		return
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第9页/共61页
 	} else if err != nil {
 		writeError(w, http.StatusInternalServerError, "pat lookup failed")
 		return
@@ -459,6 +466,8 @@ func (h *Handler) createPAT(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to generate token")
 		return
 	}
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第10页/共61页
 	id, err := h.Store.CreatePAT(u.ID, req.Name, hash, expiresAt)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to store token")
@@ -466,8 +475,6 @@ func (h *Handler) createPAT(w http.ResponseWriter, r *http.Request) {
 	}
 	h.audit(u.ID, "pat.create", req.Name)
 	writeJSON(w, http.StatusCreated, map[string]any{
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第10页/共61页
 		"id": id, "name": req.Name, "token": plain,
 		"expiresAt": expiresAt,
 		"note":      "token 明文仅此一次返回，请妥善保存",
@@ -511,6 +518,8 @@ func mustList(h *Handler, userID int64) []*auth.PAT {
 }
 // ===== 文件: internal/api/catalog.go =====
 package api
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第11页/共61页
 import (
 	"net/http"
 )
@@ -518,8 +527,6 @@ import (
 func (h *Handler) cloudProvider(w http.ResponseWriter, name string) (CloudProvider, bool) {
 	if h.Registry == nil {
 		writeError(w, http.StatusServiceUnavailable, "cloud registry not configured")
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第11页/共61页
 		return nil, false
 	}
 	p, ok := h.Registry.Provider(name)
@@ -563,6 +570,8 @@ func (h *Handler) listInstanceTypes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第12页/共61页
 	region := r.URL.Query().Get("region")
 	if region == "" {
 		writeError(w, http.StatusBadRequest, "region query parameter is required")
@@ -570,8 +579,6 @@ func (h *Handler) listInstanceTypes(w http.ResponseWriter, r *http.Request) {
 	}
 	specs, err := p.ListInstanceTypes(r.Context(), region)
 	if err != nil {
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第12页/共61页
 		writeError(w, http.StatusBadGateway, "failed to list instance types: "+err.Error())
 		return
 	}
@@ -615,6 +622,8 @@ func NewHandler(store Store, mgr auth.Manager, feishu *auth.FeishuOAuth, states 
 		Auth:     mgr,
 		Feishu:   feishu,
 		States:   states,
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第13页/共61页
 		Registry: registry,
 		Tofu:     tofu,
 		Cfg:      cfg,
@@ -622,8 +631,6 @@ func NewHandler(store Store, mgr auth.Manager, feishu *auth.FeishuOAuth, states 
 	}
 }
 func (h *Handler) t() time.Time {
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第13页/共61页
 	if h.now != nil {
 		return h.now()
 	}
@@ -640,6 +647,7 @@ func (h *Handler) Routes() http.Handler {
 	public.HandleFunc("POST /api/v1/auth/feishu/login", h.feishuLogin)
 	public.HandleFunc("GET /api/v1/auth/feishu/callback", h.feishuCallback)
 	public.HandleFunc("POST /api/v1/auth/token", h.exchangeToken)
+	public.HandleFunc("POST /api/v1/auth/login", h.login)
 	// v1 认证端点。
 	authed := http.NewServeMux()
 	authed.HandleFunc("GET /api/v1/me", h.me)
@@ -666,6 +674,8 @@ func (h *Handler) Routes() http.Handler {
 	public.Handle("/api/v1/users/", h.requireAuthWrapper()(requireAdmin(admin)))
 	public.Handle("/api/v1/admin/", h.requireAuthWrapper()(requireAdmin(admin)))
 	mux.Handle("/", public)
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第14页/共61页
 	return requestIDLog(h.Log)(corsMiddleware(h.Cfg.CORSAllowedOrigin)(mux))
 }
 func (h *Handler) requireAuthWrapper() func(http.Handler) http.Handler {
@@ -674,8 +684,6 @@ func (h *Handler) requireAuthWrapper() func(http.Handler) http.Handler {
 // --- 通用中间件 ---
 type statusRecorder struct {
 	http.ResponseWriter
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第14页/共61页
 	status int
 }
 func (r *statusRecorder) WriteHeader(code int) {
@@ -718,6 +726,8 @@ func corsMiddleware(origin string) func(http.Handler) http.Handler {
 				return
 			}
 			next.ServeHTTP(w, r)
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第15页/共61页
 		})
 	}
 }
@@ -726,8 +736,6 @@ func requireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u := auth.UserFromContext(r.Context())
 		if u == nil || u.Role != auth.RoleAdmin {
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第15页/共61页
 			writeError(w, http.StatusForbidden, "admin role required")
 			return
 		}
@@ -770,6 +778,8 @@ func validUsername(s string) bool {
 		}
 	}
 	return true
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第16页/共61页
 }
 func pathID(w http.ResponseWriter, r *http.Request, name string) (int64, bool) {
 	idStr := r.PathValue(name)
@@ -778,8 +788,6 @@ func pathID(w http.ResponseWriter, r *http.Request, name string) (int64, bool) {
 		return 0, false
 	}
 	n, err := strconv.ParseInt(idStr, 10, 64)
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第16页/共61页
 	if err != nil || n <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return 0, false
@@ -822,6 +830,8 @@ func (h *Handler) durationCap(u *auth.User) int64 {
 }
 // resolveDuration 归一化申请时长：0 用默认值；必须 >0 且 <= 上限（上限 <=0 表示不限制）。
 func (h *Handler) resolveDuration(u *auth.User, sec int64) (int64, error) {
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第17页/共61页
 	if sec == 0 {
 		sec = h.Cfg.DefaultDurationSec
 	}
@@ -830,8 +840,6 @@ func (h *Handler) resolveDuration(u *auth.User, sec int64) (int64, error) {
 	}
 	if cap := h.durationCap(u); cap > 0 && sec > cap {
 		return 0, fmt.Errorf("durationSec %d exceeds max %d", sec, cap)
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第17页/共61页
 	}
 	return sec, nil
 }
@@ -874,6 +882,8 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 			creating++
 		}
 	}
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第18页/共61页
 	if creating >= maxConcurrentCreating {
 		writeError(w, http.StatusTooManyRequests, "too many instances being created (max 5 concurrent)")
 		return
@@ -882,8 +892,6 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = fmt.Sprintf("ocw-%s", randHex(4))
 	}
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第18页/共61页
 	now := h.t()
 	inst := &Instance{
 		UserID:       u.ID,
@@ -913,18 +921,21 @@ func (h *Handler) applyInstance(inst *Instance) {
 	ctx, cancel := context.WithTimeout(context.Background(), applyTimeout)
 	defer cancel()
 	vars := map[string]string{
-		"region":        inst.Region,
-		"zone":          inst.Zone,
-		"image_id":      inst.ImageID,
-		"instance_type": inst.InstanceType,
-		"instance_name": inst.Name,
-		"bandwidth":     "5",
+		"provider":         inst.Provider, // runner 依据它选择模板与云凭证（必需）
+		"region":           inst.Region,
+		"zone":             inst.Zone,
+		"image_id":         inst.ImageID,
+		"instance_type":    inst.InstanceType,
+		"instance_name":    inst.Name,
+		"public_bandwidth": "5",
 	}
 	done := make(chan error, 1)
 	go func() { done <- h.Tofu.Apply(ctx, inst.TfWorkspace, vars) }()
 	var applyErr error
 	select {
 	case applyErr = <-done:
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第19页/共61页
 	case <-ctx.Done():
 		applyErr = ctx.Err()
 	}
@@ -934,8 +945,6 @@ func (h *Handler) applyInstance(inst *Instance) {
 	}
 	publicIP, privateIP, err := h.Tofu.OutputIP(ctx, inst.TfWorkspace)
 	if err != nil {
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第19页/共61页
 		h.markFailed(inst.ID, "output ip failed: "+err.Error())
 		return
 	}
@@ -977,6 +986,8 @@ func (h *Handler) listInstances(w http.ResponseWriter, r *http.Request) {
 		for _, su := range users {
 			insts, err := h.Store.ListInstancesByUser(su.ID)
 			if err != nil {
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第20页/共61页
 				writeError(w, http.StatusInternalServerError, "failed to list instances")
 				return
 			}
@@ -986,8 +997,6 @@ func (h *Handler) listInstances(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	insts, err := h.Store.ListInstancesByUser(u.ID)
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第20页/共61页
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list instances")
 		return
@@ -1029,6 +1038,8 @@ type renewInstanceReq struct {
 func (h *Handler) renewInstance(w http.ResponseWriter, r *http.Request) {
 	inst, ok := h.loadOwnedInstance(w, r)
 	if !ok {
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第21页/共61页
 		return
 	}
 	u := auth.UserFromContext(r.Context())
@@ -1038,8 +1049,6 @@ func (h *Handler) renewInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	now := h.t()
 	if !inst.CanRenew(now) {
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第21页/共61页
 		writeError(w, http.StatusBadRequest, "instance cannot be renewed (must be running, not expired, not already renewed)")
 		return
 	}
@@ -1081,6 +1090,8 @@ func (h *Handler) deleteInstance(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.UpdateInstance(inst); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update instance")
 		return
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第22页/共61页
 	}
 	h.audit(u.ID, "instance.destroy", fmt.Sprintf("id=%d", inst.ID))
 	go h.destroyInstance(inst.ID, inst.TfWorkspace)
@@ -1090,9 +1101,14 @@ func (h *Handler) destroyInstance(id int64, workspace string) {
 	ctx, cancel := context.WithTimeout(context.Background(), applyTimeout)
 	defer cancel()
 	if err := h.Tofu.Destroy(ctx, workspace); err != nil {
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第22页/共61页
-		h.markFailed(id, "destroy failed: "+err.Error())
+		// 销毁失败保持 Destroying 并记录原因，交给调度器退避重试——
+		// 绝不置 Failed：Failed 不会被调度器扫描，云资源将泄漏无人回收。
+		if inst, gerr := h.Store.GetInstance(id); gerr == nil {
+			inst.Status = StatusDestroying
+			inst.ErrorMessage = "destroy failed: " + err.Error()
+			inst.UpdatedAt = h.t()
+			_ = h.Store.UpdateInstance(inst)
+		}
 		return
 	}
 	if inst, err := h.Store.GetInstance(id); err == nil {
@@ -1109,70 +1125,136 @@ func randHex(n int) string {
 	}
 	return hex.EncodeToString(buf)
 }
-// ===== 文件: internal/api/model.go =====
+// ===== 文件: internal/api/login.go =====
+// 用户名/密码登录（本地用户；飞书用户请走 OAuth）。
+// 带按用户名维度的失败锁定：5 次失败后锁定 5 分钟，缓解暴力破解。
 package api
-import "time"
-// InstanceStatus 实例状态机。
-type InstanceStatus string
-const (
-	StatusCreating   InstanceStatus = "creating"
-	StatusRunning    InstanceStatus = "running"
-	StatusDestroying InstanceStatus = "destroying"
-	StatusDestroyed  InstanceStatus = "destroyed"
-	StatusFailed     InstanceStatus = "failed"
+import (
+	"errors"
+	"net/http"
+	"sync"
+	"time"
+	"github.com/linuxsuren/open-cloud-web/internal/auth"
+	"golang.org/x/crypto/bcrypt"
 )
-// Instance 是 internal/model.Instance 的局部契约子集。
-type Instance struct {
-	ID           int64          `json:"id"`
-	UserID       int64          `json:"userID"`
-	Name         string         `json:"name"`
-	Provider     string         `json:"provider"`
-	Region       string         `json:"region"`
-	Zone         string         `json:"zone"`
-	ImageID      string         `json:"imageID"`
-	InstanceType string         `json:"instanceType"`
-	Status       InstanceStatus `json:"status"`
-	ExpiresAt    time.Time      `json:"expiresAt"`
-	RenewedAt    *time.Time     `json:"renewedAt,omitempty"`
-	DurationSec  int64          `json:"durationSec"`
-	PublicIP     string         `json:"publicIP"`
-	PrivateIP    string         `json:"privateIP"`
-	TfWorkspace  string         `json:"tfWorkspace"`
-	ErrorMessage string         `json:"errorMessage,omitempty"`
-	CreatedAt    time.Time      `json:"createdAt"`
-	UpdatedAt    time.Time      `json:"updatedAt"`
-}
+const (
+	loginMaxFailures = 5
+	loginLockout     = 5 * time.Minute
+)
+type loginReq struct {
 
 OpenCloudLab云主机快速创建平台软件  V1.0  第23页/共61页
-// CanRenew 报告实例当前是否允许续用：Running、未续用过、未过期。
-func (i *Instance) CanRenew(now time.Time) bool {
-	return i.Status == StatusRunning && i.RenewedAt == nil && now.Before(i.ExpiresAt)
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
-// Image 是云镜像的契约子集。
-type Image struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Provider    string `json:"provider"`
-	Region      string `json:"region"`
-	OSType      string `json:"osType"`
-	Description string `json:"description"`
+type loginAttempt struct {
+	failures  int
+	lockedTil time.Time
 }
-// InstanceTypeSpec 是云规格的契约子集。
-type InstanceTypeSpec struct {
-	ID       string `json:"id"`
-	CPU      int    `json:"cpu"`
-	MemoryMB int    `json:"memoryMB"`
-	Provider string `json:"provider"`
-	Region   string `json:"region"`
+// loginLimiter 进程内失败计数器（多副本部署时应换成共享存储）。
+type loginLimiter struct {
+	mu       sync.Mutex
+	attempts map[string]*loginAttempt
 }
-// AuditLog 是审计日志的契约子集。
-type AuditLog struct {
-	ID        int64     `json:"id"`
-	UserID    int64     `json:"userID"`
-	Action    string    `json:"action"`
-	Detail    string    `json:"detail"`
-	CreatedAt time.Time `json:"createdAt"`
+var limiter = &loginLimiter{attempts: map[string]*loginAttempt{}}
+func (l *loginLimiter) locked(username string, now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	a, ok := l.attempts[username]
+	return ok && now.Before(a.lockedTil)
 }
+func (l *loginLimiter) recordFailure(username string, now time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	a := l.attempts[username]
+	if a == nil {
+		a = &loginAttempt{}
+		l.attempts[username] = a
+	} else if !a.lockedTil.IsZero() && now.After(a.lockedTil) {
+		// 锁定期已过：清零重新计数。
+		a = &loginAttempt{}
+		l.attempts[username] = a
+	}
+	a.failures++
+	if a.failures >= loginMaxFailures {
+		a.lockedTil = now.Add(loginLockout)
+		a.failures = 0
+	}
+}
+func (l *loginLimiter) reset(username string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.attempts, username)
+}
+// login 处理 POST /api/v1/auth/login {username, password} → JWT。
+func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
+	var req loginReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	now := h.t()
+	if limiter.locked(req.Username, now) {
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第24页/共61页
+		writeError(w, http.StatusTooManyRequests, "too many failed attempts, retry later")
+		return
+	}
+	u, err := h.Store.GetUserByUsername(req.Username)
+	if err != nil {
+		if errors.Is(err, auth.ErrNotFound) {
+			// 与密码错误保持同一响应，避免用户名枚举。
+			limiter.recordFailure(req.Username, now)
+			writeError(w, http.StatusUnauthorized, "invalid credentials")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load user")
+		return
+	}
+	if u.Status != auth.StatusActive || u.Provider != "local" || u.PasswordHash == "" {
+		limiter.recordFailure(req.Username, now)
+		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
+		limiter.recordFailure(req.Username, now)
+		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+	limiter.reset(req.Username)
+	token, err := h.Auth.IssueJWT(u)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to issue token")
+		return
+	}
+	h.audit(u.ID, "user.login", "password")
+	writeJSON(w, http.StatusOK, map[string]any{"token": token, "user": u})
+}
+// ===== 文件: internal/api/model.go =====
+// Package api 的模型视图。
+//
+// 并行开发期间曾存在局部镜像类型；集成阶段统一为 internal/model 的
+// 类型别名，消除漂移风险：签名与 JSON 序列化均以 model 为准。
+package api
+import "github.com/linuxsuren/open-cloud-web/internal/model"
+// InstanceStatus 实例状态机（model.InstanceStatus 别名）。
+type InstanceStatus = model.InstanceStatus
+const (
+	StatusCreating   = model.StatusCreating
+	StatusRunning    = model.StatusRunning
+	StatusDestroying = model.StatusDestroying
+	StatusDestroyed  = model.StatusDestroyed
+	StatusFailed     = model.StatusFailed
+)
+// Instance 云主机实例（model.Instance 别名，CanRenew 等方法随类型可用）。
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第25页/共61页
+type Instance = model.Instance
+// Image 云镜像（model.Image 别名）。
+type Image = model.Image
+// InstanceTypeSpec 云规格（model.InstanceTypeSpec 别名）。
+type InstanceTypeSpec = model.InstanceTypeSpec
+// AuditLog 审计日志（model.AuditLog 别名）。
+type AuditLog = model.AuditLog
 // ===== 文件: internal/api/store.go =====
 package api
 import (
@@ -1194,8 +1276,6 @@ type Store interface {
 	// PAT
 	CreatePAT(userID int64, name, tokenHash string, expiresAt time.Time) (int64, error)
 	GetPATByHash(tokenHash string) (*auth.PAT, error)
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第24页/共61页
 	ListPATs(userID int64) ([]*auth.PAT, error)
 	DeletePAT(id int64) error
 	// instance
@@ -1218,6 +1298,8 @@ type CloudProvider interface {
 type CloudRegistry interface {
 	Provider(name string) (CloudProvider, bool)
 }
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第26页/共61页
 // Runner 是 internal/tofu.Runner 契约的局部视图（签名照抄）。
 type Runner interface {
 	Apply(ctx context.Context, workspace string, vars map[string]string) error
@@ -1246,8 +1328,6 @@ func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
 type createUserReq struct {
 	Username       string `json:"username"`
 	DisplayName    string `json:"displayName"`
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第25页/共61页
 	Email          string `json:"email"`
 	Role           string `json:"role"`
 	MaxDurationSec int64  `json:"maxDurationSec"`
@@ -1270,6 +1350,8 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 	if len(req.DisplayName) > 64 || len(req.Email) > 254 {
 		writeError(w, http.StatusBadRequest, "displayName/email too long")
 		return
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第27页/共61页
 	}
 	role := auth.RoleUser
 	if req.Role != "" {
@@ -1298,10 +1380,10 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 		Email:          req.Email,
 		Role:           role,
 		Status:         auth.StatusActive,
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第26页/共61页
 		Provider:       "local",
+		ProviderSub:    req.Username, // users(provider, provider_sub) 唯一索引要求
 		MaxDurationSec: req.MaxDurationSec,
+		PasswordHash:   string(hash), // 仅 bcrypt 哈希落库，绝不回显
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -1309,19 +1391,8 @@ OpenCloudLab云主机快速创建平台软件  V1.0  第26页/共61页
 		writeError(w, http.StatusInternalServerError, "failed to create user")
 		return
 	}
-	// _ = hash 由 store 层持久化（PasswordHash 字段由装配层映射；此处不落地明文）。
-	h.storePasswordHash(u, string(hash))
 	h.audit(auth.UserFromContext(r.Context()).ID, "user.create", req.Username)
 	writeJSON(w, http.StatusCreated, u)
-}
-// PasswordHashSetter 是支持保存 bcrypt 哈希的可选 store 能力。
-type PasswordHashSetter interface {
-	SetUserPasswordHash(userID int64, hash string) error
-}
-func (h *Handler) storePasswordHash(u *auth.User, hash string) {
-	if s, ok := h.Store.(PasswordHashSetter); ok {
-		_ = s.SetUserPasswordHash(u.ID, hash)
-	}
 }
 type patchUserReq struct {
 	DisplayName    *string `json:"displayName"`
@@ -1331,6 +1402,8 @@ type patchUserReq struct {
 	MaxDurationSec *int64  `json:"maxDurationSec"`
 }
 func (h *Handler) patchUser(w http.ResponseWriter, r *http.Request) {
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第28页/共61页
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
@@ -1350,8 +1423,6 @@ func (h *Handler) patchUser(w http.ResponseWriter, r *http.Request) {
 	if req.DisplayName != nil {
 		if len(*req.DisplayName) > 64 {
 			writeError(w, http.StatusBadRequest, "displayName too long")
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第27页/共61页
 			return
 		}
 		u.DisplayName = *req.DisplayName
@@ -1383,6 +1454,8 @@ OpenCloudLab云主机快速创建平台软件  V1.0  第27页/共61页
 			return
 		}
 		u.MaxDurationSec = *req.MaxDurationSec
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第29页/共61页
 	}
 	u.UpdatedAt = h.t()
 	if err := h.Store.UpdateUser(u); err != nil {
@@ -1402,8 +1475,6 @@ func (h *Handler) deleteUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "cannot delete yourself")
 		return
 	}
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第28页/共61页
 	if err := h.Store.DeleteUser(id); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete user")
 		return
@@ -1435,6 +1506,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第30页/共61页
 	"strings"
 	"time"
 )
@@ -1454,8 +1527,6 @@ type FeishuUserInfo struct {
 type FeishuOAuth struct {
 	AppID       string
 	AppSecret   string
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第29页/共61页
 	RedirectURL string
 	// BaseURL 覆盖默认域名（测试注入 fake 服务器），留空用官方端点。
 	BaseURL string
@@ -1487,106 +1558,9 @@ func (f *FeishuOAuth) endpoint(defaultURL, path string) string {
 	}
 	return defaultURL
 }
-// Callback 用授权码换取 user_access_token 并拉取用户信息。
-func (f *FeishuOAuth) Callback(ctx context.Context, code string) (*FeishuUserInfo, error) {
-	accessToken, err := f.exchangeCode(ctx, code)
-	if err != nil {
-		return nil, err
-	}
-	return f.fetchUserInfo(ctx, accessToken)
-}
-type feishuTokenResp struct {
-	Code        int    `json:"code"`
-	Msg         string `json:"msg"`
-	AccessToken string `json:"access_token"`
-}
-func (f *FeishuOAuth) exchangeCode(ctx context.Context, code string) (string, error) {
-	body, _ := json.Marshal(map[string]string{
-		"grant_type": "authorization_code",
-		"client_id":  f.AppID,
-		"app_id":     f.AppID,
-		"app_secret": f.AppSecret,
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第30页/共61页
-		"code":       code,
-	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		f.endpoint(FeishuTokenURL, "/authen/v2/oauth/token"), bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	resp, err := f.client().Do(req)
-	if err != nil {
-		return "", fmt.Errorf("feishu: exchange code: %w", err)
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("feishu: exchange code: http %d: %s", resp.StatusCode, truncate(raw))
-	}
-	var tr feishuTokenResp
-	if err := json.Unmarshal(raw, &tr); err != nil {
-		return "", fmt.Errorf("feishu: decode token resp: %w", err)
-	}
-	if tr.Code != 0 {
-		return "", fmt.Errorf("feishu: exchange code: code=%d msg=%s", tr.Code, tr.Msg)
-	}
-	if tr.AccessToken == "" {
-		return "", fmt.Errorf("feishu: empty access_token")
-	}
-	return tr.AccessToken, nil
-}
-type feishuUserResp struct {
-	Code int            `json:"code"`
-	Msg  string         `json:"msg"`
-	Data FeishuUserInfo `json:"data"`
-}
-func (f *FeishuOAuth) fetchUserInfo(ctx context.Context, accessToken string) (*FeishuUserInfo, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		f.endpoint(FeishuUserInfoURL, "/authen/v1/user_info"), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	resp, err := f.client().Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("feishu: fetch user info: %w", err)
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("feishu: fetch user info: http %d: %s", resp.StatusCode, truncate(raw))
-	}
 
 OpenCloudLab云主机快速创建平台软件  V1.0  第31页/共61页
-……（中间部分略，共 85 页，仅提交前后各 30 页）……
-	}
-	if c.BackoffBase <= 0 {
-		c.BackoffBase = 30 * time.Second
-	}
-	if c.MaxBackoff <= 0 {
-		c.MaxBackoff = 10 * time.Minute
-	}
-}
-// Option 可选配置。
-type Option func(*Scheduler)
-// WithConfig 覆盖调度参数（零值字段仍用默认值）。
-func WithConfig(cfg Config) Option {
-	return func(s *Scheduler) { s.cfg = cfg }
-}
-// WithNow 注入时钟（测试用），默认 time.Now。
-func WithNow(now func() time.Time) Option {
-	if now == nil {
-		now = time.Now
-	}
-	return func(s *Scheduler) { s.now = now }
-}
-// WithLogger 注入日志函数（测试可捕获输出），默认 log.Printf。
-func WithLogger(fn func(format string, args ...any)) Option {
-	if fn == nil {
-		fn = log.Printf
-	}
+……（中间部分略，共 87 页，仅提交前后各 30 页）……
 	return func(s *Scheduler) { s.logf = fn }
 }
 // Scheduler 生命周期调度器。
@@ -1610,8 +1584,6 @@ func New(store InstanceStore, runner Destroyer, audit AuditFunc, opts ...Option)
 		runner:    runner,
 		audit:     audit,
 		now:       time.Now,
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第32页/共61页
 		logf:      log.Printf,
 		nextRetry: make(map[int64]time.Time),
 		fails:     make(map[int64]int),
@@ -1638,6 +1610,8 @@ func (s *Scheduler) Run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.scanOnce(ctx)
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第32页/共61页
 		}
 	}
 }
@@ -1662,8 +1636,6 @@ func (s *Scheduler) scanOnce(ctx context.Context) {
 		}
 	}
 }
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第33页/共61页
 // handleCreating: Creating 超时 → Failed。
 func (s *Scheduler) handleCreating(inst *Instance, now time.Time) {
 	if now.Sub(inst.CreatedAt) <= s.cfg.CreatingTimeout {
@@ -1690,6 +1662,8 @@ func (s *Scheduler) handleRunning(inst *Instance, now time.Time) {
 	inst.ErrorMessage = ""
 	inst.UpdatedAt = now
 	if err := s.store.UpdateInstance(inst); err != nil {
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第33页/共61页
 		s.logf("[scheduler] mark instance %d destroying: %v", inst.ID, err)
 		return
 	}
@@ -1714,8 +1688,6 @@ func (s *Scheduler) handleDestroying(ctx context.Context, inst *Instance, now ti
 	s.launchDestroy(inst, now)
 }
 // retryDue 判断该实例当前是否允许发起（重试）destroy。
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第34页/共61页
 func (s *Scheduler) retryDue(id int64, now time.Time) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1742,6 +1714,8 @@ func (s *Scheduler) launchDestroy(inst *Instance, now time.Time) {
 	}
 	s.inFlight[inst.ID] = true
 	s.mu.Unlock()
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第34页/共61页
 	s.wg.Add(1)
 	go func(inst *Instance) {
 		defer s.wg.Done()
@@ -1766,8 +1740,6 @@ func (s *Scheduler) launchDestroy(inst *Instance, now time.Time) {
 				s.logf("[scheduler] mark instance %d destroyed: %v", inst.ID, uerr)
 			} else {
 				s.auditLog(inst.UserID, "instance.destroyed", fmt.Sprintf("instance %d destroyed", inst.ID))
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第35页/共61页
 				s.logf("[scheduler] instance %d destroyed", inst.ID)
 			}
 			return
@@ -1794,6 +1766,8 @@ func (s *Scheduler) recordFailure(id int64) time.Duration {
 		if backoff >= s.cfg.MaxBackoff {
 			backoff = s.cfg.MaxBackoff
 			break
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第35页/共61页
 		}
 	}
 	if backoff > s.cfg.MaxBackoff {
@@ -1818,8 +1792,6 @@ import (
 	"strings"
 	"time"
 	"github.com/linuxsuren/open-cloud-web/internal/model"
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第36页/共61页
 	_ "modernc.org/sqlite"
 )
 // SQLiteStore 基于 modernc.org/sqlite（纯 Go，无 CGO）的 Store 实现。
@@ -1840,11 +1812,14 @@ CREATE TABLE IF NOT EXISTS users (
     status          TEXT    NOT NULL,
     provider        TEXT    NOT NULL,
     provider_sub    TEXT    NOT NULL DEFAULT '',
+    password_hash    TEXT    NOT NULL DEFAULT '',
     max_duration_sec INTEGER NOT NULL DEFAULT 0,
     created_at      TEXT    NOT NULL,
     updated_at      TEXT    NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第36页/共61页
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_provider_sub ON users(provider, provider_sub);
 CREATE TABLE IF NOT EXISTS pats (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1870,8 +1845,6 @@ CREATE TABLE IF NOT EXISTS instances (
     status         TEXT    NOT NULL,
     expires_at     TEXT    NOT NULL,
     renewed_at     TEXT,
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第37页/共61页
     duration_sec   INTEGER NOT NULL DEFAULT 0,
     public_ip      TEXT    NOT NULL DEFAULT '',
     private_ip     TEXT    NOT NULL DEFAULT '',
@@ -1897,6 +1870,8 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
 func OpenSQLite(dsn string) (*SQLiteStore, error) {
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第37页/共61页
 		return nil, fmt.Errorf("store: open sqlite: %w", err)
 	}
 	// SQLite 单写多读：限制写并发，配合 busy_timeout 避免锁冲突。
@@ -1922,8 +1897,6 @@ func (s *SQLiteStore) init() error {
 // Close 关闭底层连接池。
 func (s *SQLiteStore) Close() error {
 	if err := s.db.Close(); err != nil {
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第38页/共61页
 		return fmt.Errorf("store: close: %w", err)
 	}
 	return nil
@@ -1949,6 +1922,8 @@ func (s *SQLiteStore) CreateUser(u *model.User) error {
 	if !u.Role.Valid() {
 		return fmt.Errorf("store: CreateUser: invalid role %q", u.Role)
 	}
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第38页/共61页
 	if !u.Status.Valid() {
 		return fmt.Errorf("store: CreateUser: invalid status %q", u.Status)
 	}
@@ -1959,10 +1934,10 @@ func (s *SQLiteStore) CreateUser(u *model.User) error {
 	u.UpdatedAt = now
 	u.CreatedAt, u.UpdatedAt = u.CreatedAt.UTC(), u.UpdatedAt.UTC()
 	res, err := s.db.Exec(
-		`INSERT INTO users (username, display_name, email, role, status, provider, provider_sub, max_duration_sec, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO users (username, display_name, email, role, status, provider, provider_sub, max_duration_sec, password_hash, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		u.Username, u.DisplayName, u.Email, string(u.Role), string(u.Status),
-		u.Provider, u.ProviderSub, u.MaxDurationSec, fmtTime(u.CreatedAt), fmtTime(u.UpdatedAt),
+		u.Provider, u.ProviderSub, u.MaxDurationSec, u.PasswordHash, fmtTime(u.CreatedAt), fmtTime(u.UpdatedAt),
 	)
 	if err != nil {
 		return fmt.Errorf("store: create user %q: %w", u.Username, err)
@@ -1974,14 +1949,12 @@ func (s *SQLiteStore) CreateUser(u *model.User) error {
 	u.ID = id
 	return nil
 }
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第39页/共61页
-const userCols = `id, username, display_name, email, role, status, provider, provider_sub, max_duration_sec, created_at, updated_at`
+const userCols = `id, username, display_name, email, role, status, provider, provider_sub, max_duration_sec, password_hash, created_at, updated_at`
 func scanUser(row interface{ Scan(...any) error }) (*model.User, error) {
 	var u model.User
 	var role, status, createdAt, updatedAt string
 	err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &role, &status,
-		&u.Provider, &u.ProviderSub, &u.MaxDurationSec, &createdAt, &updatedAt)
+		&u.Provider, &u.ProviderSub, &u.MaxDurationSec, &u.PasswordHash, &createdAt, &updatedAt)
 	if errorsIs(err) {
 		return nil, ErrNotFound
 	}
@@ -2001,6 +1974,8 @@ func (s *SQLiteStore) GetUser(id int64) (*model.User, error) {
 	row := s.db.QueryRow(`SELECT `+userCols+` FROM users WHERE id = ?`, id)
 	return scanUser(row)
 }
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第39页/共61页
 func (s *SQLiteStore) GetUserByUsername(username string) (*model.User, error) {
 	if username == "" {
 		return nil, ErrNotFound
@@ -2026,8 +2001,6 @@ func (s *SQLiteStore) ListUsers() ([]*model.User, error) {
 		u, err := scanUser(rows)
 		if err != nil {
 			return nil, err
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第40页/共61页
 		}
 		out = append(out, u)
 	}
@@ -2053,10 +2026,24 @@ func (s *SQLiteStore) UpdateUser(u *model.User) error {
 }
 func (s *SQLiteStore) DeleteUser(id int64) error {
 	res, err := s.db.Exec(`DELETE FROM users WHERE id = ?`, id)
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第40页/共61页
 	if err != nil {
 		return fmt.Errorf("store: delete user %d: %w", id, err)
 	}
 	return ensureAffected(res, "delete user", id)
+}
+// SetUserPasswordHash 保存本地用户的 bcrypt 哈希（ PasswordHashSetter 能力）。
+// UpdateUser 有意不覆盖 password_hash，避免常规更新抹掉凭据。
+func (s *SQLiteStore) SetUserPasswordHash(userID int64, hash string) error {
+	if userID <= 0 {
+		return fmt.Errorf("store: SetUserPasswordHash: invalid user id %d", userID)
+	}
+	res, err := s.db.Exec(`UPDATE users SET password_hash=? WHERE id=?`, hash, userID)
+	if err != nil {
+		return fmt.Errorf("store: set password hash for user %d: %w", userID, err)
+	}
+	return ensureAffected(res, "set password hash", userID)
 }
 // ---------- PAT ----------
 func (s *SQLiteStore) CreatePAT(userID int64, name, tokenHash string, expiresAt time.Time) (int64, error) {
@@ -2078,8 +2065,6 @@ func (s *SQLiteStore) CreatePAT(userID int64, name, tokenHash string, expiresAt 
 		return 0, fmt.Errorf("store: create pat: %w", err)
 	}
 	id, err := res.LastInsertId()
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第41页/共61页
 	if err != nil {
 		return 0, fmt.Errorf("store: create pat: last insert id: %w", err)
 	}
@@ -2093,6 +2078,8 @@ func scanPAT(row interface{ Scan(...any) error }) (*model.PAT, error) {
 	err := row.Scan(&p.ID, &p.UserID, &p.Name, &p.TokenHash, &expiresAt, &createdAt, &lastUsed)
 	if errorsIs(err) {
 		return nil, ErrNotFound
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第41页/共61页
 	}
 	if err != nil {
 		return nil, fmt.Errorf("store: scan pat: %w", err)
@@ -2130,8 +2117,6 @@ func (s *SQLiteStore) ListPATs(userID int64) ([]*model.PAT, error) {
 		p, err := scanPAT(rows)
 		if err != nil {
 			return nil, err
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第42页/共61页
 		}
 		out = append(out, p)
 	}
@@ -2145,6 +2130,8 @@ func (s *SQLiteStore) DeletePAT(id int64) error {
 	return ensureAffected(res, "delete pat", id)
 }
 // TouchPAT 更新 PAT 的最后使用时间（认证成功时调用）。
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第42页/共61页
 func (s *SQLiteStore) TouchPAT(id int64, usedAt time.Time) error {
 	res, err := s.db.Exec(`UPDATE pats SET last_used_at = ? WHERE id = ?`, fmtTime(usedAt), id)
 	if err != nil {
@@ -2182,8 +2169,6 @@ func scanInstance(row interface{ Scan(...any) error }) (*model.Instance, error) 
 	if in.CreatedAt, err = parseTime(createdAt); err != nil {
 		return nil, err
 	}
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第43页/共61页
 	if in.UpdatedAt, err = parseTime(updatedAt); err != nil {
 		return nil, err
 	}
@@ -2197,6 +2182,8 @@ func (s *SQLiteStore) CreateInstance(in *model.Instance) error {
 		return fmt.Errorf("store: CreateInstance: invalid user id %d", in.UserID)
 	}
 	if in.Provider == "" {
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第43页/共61页
 		return fmt.Errorf("store: CreateInstance: empty provider")
 	}
 	if !in.Status.Valid() {
@@ -2234,8 +2221,6 @@ func (s *SQLiteStore) GetInstance(id int64) (*model.Instance, error) {
 	row := s.db.QueryRow(`SELECT `+instanceCols+` FROM instances WHERE id = ?`, id)
 	return scanInstance(row)
 }
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第44页/共61页
 func (s *SQLiteStore) ListInstancesByUser(userID int64) ([]*model.Instance, error) {
 	rows, err := s.db.Query(`SELECT `+instanceCols+` FROM instances WHERE user_id = ? ORDER BY id DESC`, userID)
 	if err != nil {
@@ -2249,6 +2234,8 @@ func (s *SQLiteStore) ListInstancesByUser(userID int64) ([]*model.Instance, erro
 			return nil, err
 		}
 		out = append(out, in)
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第44页/共61页
 	}
 	return out, rows.Err()
 }
@@ -2286,8 +2273,6 @@ func (s *SQLiteStore) ListInstancesByStatuses(statuses []model.InstanceStatus) (
 func (s *SQLiteStore) UpdateInstance(in *model.Instance) error {
 	if in == nil || in.ID <= 0 {
 		return fmt.Errorf("store: UpdateInstance: invalid instance id")
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第45页/共61页
 	}
 	if !in.Status.Valid() {
 		return fmt.Errorf("store: UpdateInstance: invalid status %q", in.Status)
@@ -2301,6 +2286,8 @@ OpenCloudLab云主机快速创建平台软件  V1.0  第45页/共61页
 		`UPDATE instances SET user_id=?, name=?, provider=?, region=?, zone=?, image_id=?, instance_type=?,
 		 status=?, expires_at=?, renewed_at=?, duration_sec=?, public_ip=?, private_ip=?, tf_workspace=?,
 		 error_message=?, updated_at=? WHERE id=?`,
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第45页/共61页
 		in.UserID, in.Name, in.Provider, in.Region, in.Zone, in.ImageID, in.InstanceType,
 		string(in.Status), fmtTime(in.ExpiresAt), renewedAt, in.DurationSec,
 		in.PublicIP, in.PrivateIP, in.TfWorkspace, in.ErrorMessage, fmtTime(in.UpdatedAt), in.ID,
@@ -2338,8 +2325,6 @@ func (s *SQLiteStore) CreateAuditLog(log *model.AuditLog) error {
 }
 func (s *SQLiteStore) ListAuditLogs(limit int) ([]*model.AuditLog, error) {
 	if limit <= 0 {
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第46页/共61页
 		limit = 100
 	}
 	if limit > 1000 {
@@ -2353,6 +2338,8 @@ OpenCloudLab云主机快速创建平台软件  V1.0  第46页/共61页
 	defer rows.Close()
 	var out []*model.AuditLog
 	for rows.Next() {
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第46页/共61页
 		var l model.AuditLog
 		var createdAt string
 		if err := rows.Scan(&l.ID, &l.UserID, &l.Action, &l.Detail, &createdAt); err != nil {
@@ -2390,8 +2377,6 @@ import (
 var ErrNotFound = errors.New("store: record not found")
 // Store 是所有持久化操作的接口（跨包契约，签名与 ARCHITECTURE.md 精确一致）。
 type Store interface {
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第47页/共61页
 	// user
 	CreateUser(*model.User) error
 	GetUser(id int64) (*model.User, error)
@@ -2405,6 +2390,8 @@ OpenCloudLab云主机快速创建平台软件  V1.0  第47页/共61页
 	GetPATByHash(tokenHash string) (*model.PAT, error)
 	ListPATs(userID int64) ([]*model.PAT, error)
 	DeletePAT(id int64) error
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第47页/共61页
 	// instance
 	CreateInstance(*model.Instance) error
 	GetInstance(id int64) (*model.Instance, error)
@@ -2436,14 +2423,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
 // Runner 管理每个实例的 OpenTofu 工作目录（跨包契约，签名必须与
 // ARCHITECTURE.md 保持精确一致；scheduler / api 层测试可注入 fake 实现）。
 type Runner interface {
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第48页/共61页
 	// Apply 首次调用会把 templates/<provider>/ 下的 .tf 模板复制进
 	// workspace 目录，写入 terraform.tfvars.json，然后依次执行
 	// tofu init 与 tofu apply -auto-approve。
@@ -2456,6 +2442,8 @@ OpenCloudLab云主机快速创建平台软件  V1.0  第48页/共61页
 //go:embed templates
 var templateFS embed.FS
 // Credentials 按 provider 注入的云凭证，例如
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第48页/共61页
 // {"alicloud": {"access_key": "...", "secret_key": "..."}}。
 // 凭证只通过 TF_VAR_ 环境变量传给 tofu 进程，绝不写盘。
 type Credentials map[string]map[string]string
@@ -2494,8 +2482,6 @@ func NewRunner(cfg Config) Runner {
 		cfg.Templates = templateFS
 	}
 	return &runner{cfg: cfg}
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第49页/共61页
 }
 type runner struct {
 	cfg Config
@@ -2508,6 +2494,8 @@ type runner struct {
 func (r *runner) EnvVars(provider string) []string {
 	creds := r.cfg.Credentials[provider]
 	env := make([]string, 0, len(creds))
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第49页/共61页
 	for k, v := range creds {
 		env = append(env, fmt.Sprintf("TF_VAR_%s=%s", k, v))
 	}
@@ -2546,8 +2534,6 @@ func (r *runner) Destroy(ctx context.Context, workspace string) error {
 	if err := validWorkspace(workspace); err != nil {
 		return err
 	}
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第50页/共61页
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	wsDir := r.workspaceDir(workspace)
@@ -2560,6 +2546,8 @@ OpenCloudLab云主机快速创建平台软件  V1.0  第50页/共61页
 	provider := r.detectProvider(wsDir)
 	if err := r.run(ctx, wsDir, r.env(provider), nil,
 		"destroy", "-auto-approve", "-no-color"); err != nil {
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第50页/共61页
 		return fmt.Errorf("tofu destroy: %w", err)
 	}
 	return nil
@@ -2598,8 +2586,6 @@ func outputValue(raw map[string]struct {
 		return list[0]
 	}
 	return ""
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第51页/共61页
 }
 func (r *runner) workspaceDir(workspace string) string {
 	return filepath.Join(r.cfg.DataDir, "workspaces", workspace)
@@ -2612,6 +2598,8 @@ func (r *runner) env(provider string) []string {
 	)
 	return append(env, r.EnvVars(provider)...)
 }
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第51页/共61页
 // detectProvider 从 workspace 已写入的 tfvars 里读回 provider，
 // 用于 destroy/output 时注入对应凭证。
 func (r *runner) detectProvider(wsDir string) string {
@@ -2650,8 +2638,6 @@ func ensureWorkspace(wsDir, provider string, templates fs.FS) error {
 	}
 	root := fmt.Sprintf("templates/%s", provider)
 	tfs, err := fs.Glob(templates, root+"/*.tf")
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第52页/共61页
 	if err != nil {
 		return err
 	}
@@ -2664,6 +2650,8 @@ OpenCloudLab云主机快速创建平台软件  V1.0  第52页/共61页
 			return err
 		}
 		if err := os.WriteFile(filepath.Join(wsDir, filepath.Base(name)), data, 0o644); err != nil {
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第52页/共61页
 			return err
 		}
 	}
@@ -2671,13 +2659,19 @@ OpenCloudLab云主机快速创建平台软件  V1.0  第52页/共61页
 }
 // writeTFVars 把 vars 序列化为 terraform.tfvars.json；
 // "provider" 仅用于路由模板/凭证，不写入（模板未声明该变量）。
+// 纯数字字符串写成 JSON number，以匹配模板中 number 类型的变量
+// （如 public_bandwidth），否则 tofu 会因类型不匹配拒绝加载。
 func writeTFVars(wsDir string, vars map[string]string) error {
-	clean := make(map[string]string, len(vars))
+	clean := make(map[string]any, len(vars))
 	for k, v := range vars {
 		if k == "provider" {
 			continue
 		}
-		clean[k] = v
+		if n, err := strconv.Atoi(v); err == nil {
+			clean[k] = n
+		} else {
+			clean[k] = v
+		}
 	}
 	data, err := json.MarshalIndent(clean, "", "  ")
 	if err != nil {
@@ -2702,14 +2696,14 @@ func (r *runner) apply(ctx context.Context, wsDir string, env []string) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("tofu apply: 启动 %s: %w", r.cfg.TofuPath, err)
 	}
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第53页/共61页
 	// 解析 -json 事件流（每行一个 JSON 对象，见 OpenTofu/Terraform
 	// JSON 输出格式文档：https://opentofu.org/docs/internals/json-format/）。
 	var diags []string
 	dec := json.NewDecoder(stdout)
 	for {
 		var msg struct {
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第53页/共61页
 			Level      string `json:"@level"`
 			Type       string `json:"type"`
 			Diagnostic *struct {
@@ -2752,18 +2746,20 @@ OpenCloudLab云主机快速创建平台软件  V1.0  第53页/共61页
 	return nil
 }
 // run 执行一个普通 tofu 子命令（init/destroy/output），捕获输出。
+// stdout 与 stderr 各用独立 buffer：exec 对两路输出各起一个 goroutine
+// 并发拷贝，共用一个非线程安全的 buffer 会构成数据竞争。
 func (r *runner) run(ctx context.Context, wsDir string, env []string, stdout io.Writer, args ...string) error {
 	cmd := exec.CommandContext(ctx, r.cfg.TofuPath, args...)
-
-OpenCloudLab云主机快速创建平台软件  V1.0  第54页/共61页
 	cmd.Dir = wsDir
 	cmd.Env = env
-	var combined bytes.Buffer
-	cmd.Stdout = &combined
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+
+OpenCloudLab云主机快速创建平台软件  V1.0  第54页/共61页
 	if stdout != nil {
-		cmd.Stdout = io.MultiWriter(&combined, stdout)
+		cmd.Stdout = io.MultiWriter(&outBuf, stdout)
 	}
-	cmd.Stderr = &combined
+	cmd.Stderr = &errBuf
 	err := cmd.Run()
 	if err == nil {
 		return nil
@@ -2771,7 +2767,11 @@ OpenCloudLab云主机快速创建平台软件  V1.0  第54页/共61页
 	if ctx.Err() != nil {
 		return fmt.Errorf("%w（%s）", ctx.Err(), err)
 	}
-	return fmt.Errorf("%s", clip(strings.TrimSpace(combined.String()), 2000))
+	combined := strings.TrimSpace(errBuf.String())
+	if combined == "" {
+		combined = strings.TrimSpace(outBuf.String())
+	}
+	return fmt.Errorf("%s", clip(combined, 2000))
 }
 // clip 截断过长输出，避免错误信息撑爆日志。
 func clip(s string, n int) string {

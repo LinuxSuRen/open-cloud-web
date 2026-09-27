@@ -35,6 +35,19 @@ curl -H "Authorization: Bearer <jwt>" http://localhost:8080/api/v1/me
 curl -H "Authorization: Bearer pat_ocw_xxx" http://localhost:8080/api/v1/me
 ```
 
+## 密码登录（本地用户）
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"<密码>"}'
+# {"token":"<jwt>","user":{...}}
+```
+
+- 仅 `provider=local` 且已有密码哈希的用户可用（管理员创建的本地用户、bootstrap admin）。
+- 首次启动设置 `OCW_ADMIN_BOOTSTRAP_TOKEN` 会创建 `admin` 用户，密码即该 token，用本端点登录。
+- 同一用户名连续 5 次失败锁定 5 分钟（`429`）；凭据错误统一返回 `401`，不区分用户名是否存在。
+
 ## 飞书 OAuth 登录
 
 ### 获取授权地址
