@@ -13,7 +13,7 @@ terraform {
 
   required_providers {
     volcengine = {
-      source  = "volcengine/volcengine"
+      source = "volcengine/volcengine"
       # 锁定 1.x 大版本（>= 约束，允许补丁升级）。
       version = ">= 0.0.150"
     }
@@ -45,21 +45,21 @@ resource "volcengine_security_group" "this" {
 }
 
 resource "volcengine_security_group_rule" "ingress" {
-  for_each           = toset(["22", "80", "443"])
-  security_group_id  = volcengine_security_group.this.id
-  protocol           = "TCP"
-  port               = each.value
-  source_cidr_ip     = "0.0.0.0/0"
-  direction          = "ingress"
+  for_each          = toset(["22", "80", "443"])
+  security_group_id = volcengine_security_group.this.id
+  protocol          = "TCP"
+  port              = each.value
+  source_cidr_ip    = "0.0.0.0/0"
+  direction         = "ingress"
 }
 
 resource "volcengine_ecs_instance" "this" {
-  instance_name       = var.instance_name
-  host_name           = var.instance_name
-  image_id            = var.image_id
-  instance_type_id    = var.instance_type
-  subnet_id           = volcengine_subnet.this.id
-  security_group_ids  = [volcengine_security_group.this.id]
+  instance_name        = var.instance_name
+  host_name            = var.instance_name
+  image_id             = var.image_id
+  instance_type_id     = var.instance_type
+  subnet_id            = volcengine_subnet.this.id
+  security_group_ids   = [volcengine_security_group.this.id]
   instance_charge_type = "PostPaid"
 }
 

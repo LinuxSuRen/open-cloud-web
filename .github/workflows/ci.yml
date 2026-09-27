@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: gofmt check
+        run: test -z "$(gofmt -l internal cmd)" || (gofmt -l internal cmd && exit 1)
+      - name: go vet
+        run: go vet ./...
+      - name: build
+        run: go build ./...
+      - name: test (race)
+        run: go test -race -count=1 ./...
+
+  tofu:
+    name: OpenTofu fmt & validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.8
+      - name: Cache provider plugins
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/tofu-plugin-cache
+          key: tofu-plugins-${{ runner.os }}-${{ hashFiles('internal/tofu/templates/**/*.tf') }}
+      - name: tofu fmt check
+        run: tofu fmt -recursive -check internal/tofu/templates
+      - name: init & validate (alicloud)
+        working-directory: internal/tofu/templates/alicloud
+        env:
+          TF_PLUGIN_CACHE_DIR: ~/.cache/tofu-plugin-cache
+        run: |
+          tofu init -backend=false -input=false -no-color
+          tofu validate -no-color
+      - name: init & validate (volcengine)
+        working-directory: internal/tofu/templates/volcengine
+        env:
+          TF_PLUGIN_CACHE_DIR: ~/.cache/tofu-plugin-cache
+        run: |
+          tofu init -backend=false -input=false -no-color
+          tofu validate -no-color
+
+  web:
+    name: Vue build (embedded dist up to date)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: webapp/package-lock.json
+      - name: build frontend
+        working-directory: webapp
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: embedded dist must match rebuild
+        run: |
+          git add -A
+          git diff --cached --exit-code -- internal/web/dist || {
+            echo "::error::internal/web/dist 与 webapp 源码不一致，请运行 cd webapp && npm run build 并提交"
+            exit 1
+          }
