@@ -1,55 +1,32 @@
+// Package auth 的模型视图。
+//
+// 并行开发期间曾存在局部镜像类型；集成阶段统一为 internal/model 的
+// 类型别名，消除漂移风险：签名与 JSON 序列化均以 model 为准。
 package auth
 
 import (
-	"errors"
-	"time"
+	"github.com/linuxsuren/open-cloud-web/internal/model"
+	"github.com/linuxsuren/open-cloud-web/internal/store"
 )
 
-// ErrNotFound 由 store 层返回，表示记录不存在。
-var ErrNotFound = errors.New("auth: not found")
+// ErrNotFound 与 store 层哨兵错误同一实例，供 errors.Is 判定。
+var ErrNotFound = store.ErrNotFound
 
-// Role 用户角色。
-type Role string
+// Role 用户角色（model.Role 别名）。
+type Role = model.Role
+
+// UserStatus 用户状态（model.UserStatus 别名）。
+type UserStatus = model.UserStatus
 
 const (
-	RoleAdmin Role = "admin"
-	RoleUser  Role = "user"
+	RoleAdmin      = model.RoleAdmin
+	RoleUser       = model.RoleUser
+	StatusActive   = model.StatusActive
+	StatusDisabled = model.StatusDisabled
 )
 
-// UserStatus 用户状态。
-type UserStatus string
+// User 平台用户（model.User 别名）。
+type User = model.User
 
-const (
-	StatusActive   UserStatus = "active"
-	StatusDisabled UserStatus = "disabled"
-)
-
-// User 是 internal/model.User 的局部契约子集（跨 agent 并行开发期间的依赖倒置）。
-type User struct {
-	ID             int64      `json:"id"`
-	Username       string     `json:"username"`
-	DisplayName    string     `json:"displayName"`
-	Email          string     `json:"email"`
-	Role           Role       `json:"role"`
-	Status         UserStatus `json:"status"`
-	Provider       string     `json:"provider"`
-	ProviderSub    string     `json:"providerSub"`
-	MaxDurationSec int64      `json:"maxDurationSec"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
-}
-
-// PAT 是 personal access token 的存储视图（只含哈希）。
-type PAT struct {
-	ID        int64     `json:"id"`
-	UserID    int64     `json:"userID"`
-	Name      string    `json:"name"`
-	TokenHash string    `json:"-"`
-	ExpiresAt time.Time `json:"expiresAt"` // 零值表示永不过期
-	CreatedAt time.Time `json:"createdAt"`
-}
-
-// Expired 报告 PAT 是否已过期。
-func (p *PAT) Expired(now time.Time) bool {
-	return !p.ExpiresAt.IsZero() && now.After(p.ExpiresAt)
-}
+// PAT 个人访问令牌的存储视图（model.PAT 别名，只含哈希；Expired 方法可用）。
+type PAT = model.PAT

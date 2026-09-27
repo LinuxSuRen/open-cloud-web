@@ -1,69 +1,30 @@
+// Package api 的模型视图。
+//
+// 并行开发期间曾存在局部镜像类型；集成阶段统一为 internal/model 的
+// 类型别名，消除漂移风险：签名与 JSON 序列化均以 model 为准。
 package api
 
-import "time"
+import "github.com/linuxsuren/open-cloud-web/internal/model"
 
-// InstanceStatus 实例状态机。
-type InstanceStatus string
+// InstanceStatus 实例状态机（model.InstanceStatus 别名）。
+type InstanceStatus = model.InstanceStatus
 
 const (
-	StatusCreating   InstanceStatus = "creating"
-	StatusRunning    InstanceStatus = "running"
-	StatusDestroying InstanceStatus = "destroying"
-	StatusDestroyed  InstanceStatus = "destroyed"
-	StatusFailed     InstanceStatus = "failed"
+	StatusCreating   = model.StatusCreating
+	StatusRunning    = model.StatusRunning
+	StatusDestroying = model.StatusDestroying
+	StatusDestroyed  = model.StatusDestroyed
+	StatusFailed     = model.StatusFailed
 )
 
-// Instance 是 internal/model.Instance 的局部契约子集。
-type Instance struct {
-	ID           int64          `json:"id"`
-	UserID       int64          `json:"userID"`
-	Name         string         `json:"name"`
-	Provider     string         `json:"provider"`
-	Region       string         `json:"region"`
-	Zone         string         `json:"zone"`
-	ImageID      string         `json:"imageID"`
-	InstanceType string         `json:"instanceType"`
-	Status       InstanceStatus `json:"status"`
-	ExpiresAt    time.Time      `json:"expiresAt"`
-	RenewedAt    *time.Time     `json:"renewedAt,omitempty"`
-	DurationSec  int64          `json:"durationSec"`
-	PublicIP     string         `json:"publicIP"`
-	PrivateIP    string         `json:"privateIP"`
-	TfWorkspace  string         `json:"tfWorkspace"`
-	ErrorMessage string         `json:"errorMessage,omitempty"`
-	CreatedAt    time.Time      `json:"createdAt"`
-	UpdatedAt    time.Time      `json:"updatedAt"`
-}
+// Instance 云主机实例（model.Instance 别名，CanRenew 等方法随类型可用）。
+type Instance = model.Instance
 
-// CanRenew 报告实例当前是否允许续用：Running、未续用过、未过期。
-func (i *Instance) CanRenew(now time.Time) bool {
-	return i.Status == StatusRunning && i.RenewedAt == nil && now.Before(i.ExpiresAt)
-}
+// Image 云镜像（model.Image 别名）。
+type Image = model.Image
 
-// Image 是云镜像的契约子集。
-type Image struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Provider    string `json:"provider"`
-	Region      string `json:"region"`
-	OSType      string `json:"osType"`
-	Description string `json:"description"`
-}
+// InstanceTypeSpec 云规格（model.InstanceTypeSpec 别名）。
+type InstanceTypeSpec = model.InstanceTypeSpec
 
-// InstanceTypeSpec 是云规格的契约子集。
-type InstanceTypeSpec struct {
-	ID       string `json:"id"`
-	CPU      int    `json:"cpu"`
-	MemoryMB int    `json:"memoryMB"`
-	Provider string `json:"provider"`
-	Region   string `json:"region"`
-}
-
-// AuditLog 是审计日志的契约子集。
-type AuditLog struct {
-	ID        int64     `json:"id"`
-	UserID    int64     `json:"userID"`
-	Action    string    `json:"action"`
-	Detail    string    `json:"detail"`
-	CreatedAt time.Time `json:"createdAt"`
-}
+// AuditLog 审计日志（model.AuditLog 别名）。
+type AuditLog = model.AuditLog
