@@ -5,9 +5,10 @@ import (
 	"time"
 
 	"github.com/linuxsuren/open-cloud-web/internal/auth"
+	"github.com/linuxsuren/open-cloud-web/internal/model"
 )
 
-// Store 是 API 层需要的 store 子集（Go 隐式接口，签名照抄 ARCHITECTURE.md 契约）。
+// Store 是 API 层需要的 store 子集（Go 隐式接口）。
 // 由 internal/store 的实现满足；未列出的方法不属于 API 层职责。
 type Store interface {
 	// user
@@ -28,22 +29,16 @@ type Store interface {
 	GetInstance(id int64) (*Instance, error)
 	ListInstancesByUser(userID int64) ([]*Instance, error)
 	UpdateInstance(*Instance) error
+	// cloud account（用户添加的云提供商认证信息）
+	CreateCloudAccount(*model.CloudAccount) error
+	GetCloudAccount(id int64) (*model.CloudAccount, error)
+	ListCloudAccountsByUser(userID int64) ([]*model.CloudAccount, error)
+	ListCloudAccounts() ([]*model.CloudAccount, error)
+	UpdateCloudAccount(*model.CloudAccount) error
+	DeleteCloudAccount(id int64) error
 	// audit
 	CreateAuditLog(*AuditLog) error
 	ListAuditLogs(limit int) ([]*AuditLog, error)
-}
-
-// CloudProvider 是 internal/cloud.Provider 契约的局部视图。
-type CloudProvider interface {
-	Name() string
-	ListRegions(ctx context.Context) ([]string, error)
-	ListImages(ctx context.Context, region string) ([]Image, error)
-	ListInstanceTypes(ctx context.Context, region string) ([]InstanceTypeSpec, error)
-}
-
-// CloudRegistry 按 provider 名（alicloud | volcengine）查找 CloudProvider。
-type CloudRegistry interface {
-	Provider(name string) (CloudProvider, bool)
 }
 
 // Runner 是 internal/tofu.Runner 契约的局部视图（签名照抄）。
@@ -52,3 +47,7 @@ type Runner interface {
 	Destroy(ctx context.Context, workspace string) error
 	OutputIP(ctx context.Context, workspace string) (public, private string, err error)
 }
+
+// RunnerFactory 按云提供商与账号凭据构造 tofu Runner。
+// 由装配层注入（包一层 internal/tofu.NewRunner），测试可注入 fake。
+type RunnerFactory func(provider, accessKey, secretKey string) Runner

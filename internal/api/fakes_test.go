@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/linuxsuren/open-cloud-web/internal/auth"
+	"github.com/linuxsuren/open-cloud-web/internal/model"
 )
 
 // fakeStore 是 Store 的内存实现（仅测试）。
@@ -20,6 +21,7 @@ type fakeStore struct {
 	pats      map[int64]*auth.PAT
 	patOwner  map[int64]int64
 	instances map[int64]*Instance
+	accounts  map[int64]*model.CloudAccount
 	audit     []*AuditLog
 	hashes    map[int64]string
 }
@@ -28,7 +30,7 @@ func newFakeStore() *fakeStore {
 	return &fakeStore{
 		nextID: 100, users: map[int64]*auth.User{}, byName: map[string]int64{},
 		byPatHash: map[string]*auth.PAT{}, pats: map[int64]*auth.PAT{}, patOwner: map[int64]int64{},
-		instances: map[int64]*Instance{}, hashes: map[int64]string{},
+		instances: map[int64]*Instance{}, accounts: map[int64]*model.CloudAccount{}, hashes: map[int64]string{},
 	}
 }
 
@@ -215,6 +217,73 @@ func (s *fakeStore) ListAuditLogs(limit int) ([]*AuditLog, error) {
 	return append([]*AuditLog(nil), s.audit...), nil
 }
 
+// ---------- cloud account ----------
+
+func (s *fakeStore) CreateCloudAccount(a *model.CloudAccount) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nextID++
+	a.ID = s.nextID
+	cp := *a
+	s.accounts[a.ID] = &cp
+	return nil
+}
+
+func (s *fakeStore) GetCloudAccount(id int64) (*model.CloudAccount, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if a, ok := s.accounts[id]; ok {
+		cp := *a
+		return &cp, nil
+	}
+	return nil, auth.ErrNotFound
+}
+
+func (s *fakeStore) ListCloudAccountsByUser(userID int64) ([]*model.CloudAccount, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*model.CloudAccount
+	for _, a := range s.accounts {
+		if a.UserID == userID {
+			cp := *a
+			out = append(out, &cp)
+		}
+	}
+	return out, nil
+}
+
+func (s *fakeStore) ListCloudAccounts() ([]*model.CloudAccount, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*model.CloudAccount
+	for _, a := range s.accounts {
+		cp := *a
+		out = append(out, &cp)
+	}
+	return out, nil
+}
+
+func (s *fakeStore) UpdateCloudAccount(a *model.CloudAccount) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.accounts[a.ID]; !ok {
+		return auth.ErrNotFound
+	}
+	cp := *a
+	s.accounts[a.ID] = &cp
+	return nil
+}
+
+func (s *fakeStore) DeleteCloudAccount(id int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.accounts[id]; !ok {
+		return auth.ErrNotFound
+	}
+	delete(s.accounts, id)
+	return nil
+}
+
 func (s *fakeStore) getInstance(id int64) *Instance {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -270,26 +339,9 @@ func (f *fakeRunner) OutputIP(ctx context.Context, ws string) (string, string, e
 	return "1.2.3.4", "10.0.0.4", nil
 }
 
-type fakeRegistry struct{}
-
-func (fakeRegistry) Provider(name string) (CloudProvider, bool) {
-	if name != "alicloud" && name != "volcengine" {
-		return nil, false
-	}
-	return fakeCloud{name}, true
-}
-
-type fakeCloud struct{ name string }
-
-func (f fakeCloud) Name() string { return f.name }
-func (f fakeCloud) ListRegions(ctx context.Context) ([]string, error) {
-	return []string{"cn-beijing", "cn-shanghai"}, nil
-}
-func (f fakeCloud) ListImages(ctx context.Context, region string) ([]Image, error) {
-	return []Image{{ID: "img-1", Name: "ubuntu", Provider: f.name, Region: region, OSType: "linux"}}, nil
-}
-func (f fakeCloud) ListInstanceTypes(ctx context.Context, region string) ([]InstanceTypeSpec, error) {
-	return []InstanceTypeSpec{{ID: "ecs.small", CPU: 2, MemoryMB: 2048, Provider: f.name, Region: region}}, nil
+// fakeRunnerFactory 按账号凭据返回 fake runner（记录凭据供断言）。
+func fakeRunnerFactory(runner *fakeRunner) RunnerFactory {
+	return func(provider, ak, sk string) Runner { return runner }
 }
 
 // newTestServer 组装完整 API（内存 store + fake tofu/cloud）。
@@ -297,10 +349,11 @@ func newTestServer(t *testing.T) (*fakeStore, *fakeRunner, *Handler) {
 	t.Helper()
 	store := newFakeStore()
 	runner := newFakeRunner()
-	h := NewHandler(store, auth.NewManager("test-secret-0000000000000"), nil, auth.NewStateManager("state-secret-0000000"), fakeRegistry{}, runner, Config{
+	h := NewHandler(store, auth.NewManager("test-secret-0000000000000"), nil, auth.NewStateManager("state-secret-0000000"), fakeRunnerFactory(runner), Config{
 		DefaultDurationSec: 3600,
 		MaxDurationSec:     7200,
 		CORSAllowedOrigin:  "*",
+		SecretKey:          "test-enc-secret",
 	})
 	h.Log = log.New(log.Writer(), "", 0)
 	return store, runner, h

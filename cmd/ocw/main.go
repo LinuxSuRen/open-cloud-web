@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"errors"
 	"log"
 	"net/http"
@@ -19,7 +20,7 @@ import (
 
 	"github.com/linuxsuren/open-cloud-web/internal/api"
 	"github.com/linuxsuren/open-cloud-web/internal/auth"
-	"github.com/linuxsuren/open-cloud-web/internal/cloud"
+	"github.com/linuxsuren/open-cloud-web/internal/secrets"
 	"github.com/linuxsuren/open-cloud-web/internal/config"
 	"github.com/linuxsuren/open-cloud-web/internal/model"
 	"github.com/linuxsuren/open-cloud-web/internal/scheduler"
@@ -62,35 +63,27 @@ func run() error {
 		RedirectURL: cfg.FeishuRedirectURL,
 	}
 
-	// 5. 云提供商 registry（alicloud / volcengine 凭据来自环境变量）。
-	// AK 为空也注册：端点会透传云 API 的鉴权错误，便于定位配置缺失。
-	cloud.Register(cloud.NewAlicloudProvider(cfg.AlicloudAccessKey, cfg.AlicloudSecretKey))
-	cloud.Register(cloud.NewVolcengineProvider(cfg.VolcengineAccessKey, cfg.VolcengineSecretKey))
-	if cfg.AlicloudAccessKey == "" && cfg.VolcengineAccessKey == "" {
-		log.Printf("[ocw] warning: no cloud credentials configured (OCW_ALICLOUD_* / OCW_VOLCENGINE_*)")
+	// 5. RunnerFactory：云凭据来自“用户添加的云账号”（数据库加密存储），
+	//    不再使用环境变量写死的全局凭据。
+	secretKey := cfg.SecretKey
+	if secretKey == "" {
+		secretKey = cfg.JWTSecret // 回落 JWT secret（生产建议独立设置 OCW_SECRET_KEY）
+	}
+	newRunner := func(provider, ak, sk string) tofu.Runner {
+		return tofu.NewRunner(tofu.Config{
+			TofuPath: cfg.TofuBinary,
+			DataDir:  cfg.DataDir,
+			Credentials: tofu.Credentials{
+				provider: {"access_key": ak, "secret_key": sk},
+			},
+		})
 	}
 
-	// 6. OpenTofu runner（tofu.Runner 契约：Apply/Destroy/OutputIP）。
-	runner := tofu.NewRunner(tofu.Config{
-		TofuPath: cfg.TofuBinary,
-		DataDir:  cfg.DataDir,
-		Credentials: tofu.Credentials{
-			"alicloud": {
-				"access_key": cfg.AlicloudAccessKey,
-				"secret_key": cfg.AlicloudSecretKey,
-			},
-			"volcengine": {
-				"access_key": cfg.VolcengineAccessKey,
-				"secret_key": cfg.VolcengineSecretKey,
-			},
-		},
-	})
-
-	// 7. 生命周期调度器：storeSchedulerAdapter 把 store.Store（model.Instance）
-	// 适配为 scheduler.InstanceStore（最小依赖视图），可独立单测。
+	// 6. 生命周期调度器：storeSchedulerAdapter 把 store.Store（model.Instance）
+	// 适配为 scheduler.InstanceStore；accountDestroyer 按 workspace 恢复账号凭据。
 	sched := scheduler.New(
 		&storeSchedulerAdapter{store: st},
-		runner, // tofu.Runner 的 Destroy 与 scheduler.Destroyer 签名一致
+		&accountDestroyer{store: st, secretKey: secretKey, newRunner: newRunner},
 		func(userID int64, action, detail string) {
 			_ = st.CreateAuditLog(&model.AuditLog{UserID: userID, Action: action, Detail: detail, CreatedAt: time.Now().UTC()})
 		},
@@ -102,15 +95,15 @@ func run() error {
 		}),
 	)
 
-	// 8. HTTP API（/api/v1，含 GET /healthz 健康检查）。
+	// 7. HTTP API（/api/v1，含 GET /healthz 健康检查）。
 	handler := api.NewHandler(
 		st, mgr, feishu, states,
-		cloudRegistryAdapter{},
-		runner,
+		func(provider, ak, sk string) api.Runner { return newRunner(provider, ak, sk) },
 		api.Config{
 			DefaultDurationSec: cfg.DefaultDurationSec,
 			MaxDurationSec:     cfg.MaxDurationSec,
 			CORSAllowedOrigin:  cfg.CORSAllowedOrigin,
+			SecretKey:          secretKey,
 		},
 	)
 
@@ -230,52 +223,29 @@ func (a *storeSchedulerAdapter) UpdateInstance(i *scheduler.Instance) error {
 	return a.store.UpdateInstance(full)
 }
 
-// cloudRegistryAdapter 把 internal/cloud 的全局注册表适配为 api.CloudRegistry。
-type cloudRegistryAdapter struct{}
-
-func (cloudRegistryAdapter) Provider(name string) (api.CloudProvider, bool) {
-	p, err := cloud.Get(name)
-	if err != nil {
-		return nil, false
-	}
-	return cloudProviderAdapter{p}, true
+// accountDestroyer 实现 scheduler.Destroyer：按 workspace 找到实例，
+// 再凭实例记录的云账号恢复凭据构造 runner 执行销毁。
+type accountDestroyer struct {
+	store     *store.SQLiteStore
+	secretKey string
+	newRunner func(provider, ak, sk string) tofu.Runner
 }
 
-// cloudProviderAdapter 将 cloud.Provider（model 类型）转换为 api.CloudProvider
-// （api 局部类型）。
-type cloudProviderAdapter struct{ p cloud.Provider }
-
-func (a cloudProviderAdapter) Name() string { return a.p.Name() }
-
-func (a cloudProviderAdapter) ListRegions(ctx context.Context) ([]string, error) {
-	return a.p.ListRegions(ctx)
-}
-
-func (a cloudProviderAdapter) ListImages(ctx context.Context, region string) ([]api.Image, error) {
-	imgs, err := a.p.ListImages(ctx, region)
+func (d *accountDestroyer) Destroy(ctx context.Context, workspace string) error {
+	inst, err := d.store.GetInstanceByWorkspace(workspace)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("destroy %s: %w", workspace, err)
 	}
-	out := make([]api.Image, 0, len(imgs))
-	for _, i := range imgs {
-		out = append(out, api.Image{
-			ID: i.ID, Name: i.Name, Provider: i.Provider,
-			Region: i.Region, OSType: i.OSType, Description: i.Description,
-		})
+	if inst.CloudAccountID <= 0 {
+		return fmt.Errorf("destroy %s: instance has no cloud account", workspace)
 	}
-	return out, nil
-}
-
-func (a cloudProviderAdapter) ListInstanceTypes(ctx context.Context, region string) ([]api.InstanceTypeSpec, error) {
-	specs, err := a.p.ListInstanceTypes(ctx, region)
+	acct, err := d.store.GetCloudAccount(inst.CloudAccountID)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("destroy %s: cloud account unavailable: %w", workspace, err)
 	}
-	out := make([]api.InstanceTypeSpec, 0, len(specs))
-	for _, s := range specs {
-		out = append(out, api.InstanceTypeSpec{
-			ID: s.ID, CPU: s.CPU, MemoryMB: s.MemoryMB, Provider: s.Provider, Region: s.Region,
-		})
+	sk, err := secrets.Decrypt(acct.SecretEnc, d.secretKey)
+	if err != nil {
+		return fmt.Errorf("destroy %s: %w", workspace, err)
 	}
-	return out, nil
+	return d.newRunner(acct.Provider, acct.AccessKey, sk).Destroy(ctx, workspace)
 }
