@@ -5,6 +5,8 @@ import { api, arr, fmtTime } from '../api'
 const accounts = ref([])
 const form = reactive({ name: '', provider: 'alicloud', accessKey: '', secretKey: '' })
 const busy = ref(false)
+const testing = ref(0) // 正在测试的账号 ID
+const results = reactive({}) // id -> { status, message }
 
 async function load() {
   accounts.value = arr(await api('GET', '/api/v1/cloud-accounts'))
@@ -21,6 +23,19 @@ async function create() {
     alert('添加失败：' + e.message)
   } finally {
     busy.value = false
+  }
+}
+
+async function test(a) {
+  testing.value = a.id
+  delete results[a.id]
+  try {
+    const d = await api('POST', `/api/v1/cloud-accounts/${a.id}/test`)
+    results[a.id] = d
+  } catch (e) {
+    results[a.id] = { status: 'error', message: e.message }
+  } finally {
+    testing.value = 0
   }
 }
 
@@ -66,7 +81,24 @@ const PROV = { alicloud: '阿里云', volcengine: '火山引擎' }
             <td>{{ PROV[a.provider] || a.provider }}</td>
             <td class="mono">{{ a.accessKey }}</td>
             <td>{{ fmtTime(a.createdAt) }}</td>
-            <td><button class="ghost mini danger" @click="remove(a)">删除</button></td>
+            <td style="white-space:nowrap">
+              <button class="ghost mini" :disabled="testing === a.id" @click="test(a)">
+                {{ testing === a.id ? '测试中…' : '测试' }}
+              </button>
+              <button class="ghost mini danger" @click="remove(a)">删除</button>
+              <div
+                v-if="results[a.id]"
+                :style="{
+                  marginTop: '6px',
+                  fontSize: '12px',
+                  whiteSpace: 'normal',
+                  maxWidth: '360px',
+                  color: results[a.id].status === 'ok' ? 'var(--ok)' : 'var(--err)',
+                }"
+              >
+                {{ results[a.id].status === 'ok' ? '✅ ' : '❌ ' }}{{ results[a.id].message }}
+              </div>
+            </td>
           </tr>
         </tbody>
       </table>

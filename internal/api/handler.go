@@ -87,6 +87,7 @@ func (h *Handler) Routes() http.Handler {
 	authed.HandleFunc("GET /api/v1/cloud-accounts", h.listAccounts)
 	authed.HandleFunc("POST /api/v1/cloud-accounts", h.createAccount)
 	authed.HandleFunc("DELETE /api/v1/cloud-accounts/{id}", h.deleteAccount)
+	authed.HandleFunc("POST /api/v1/cloud-accounts/{id}/test", h.testAccount)
 	authed.HandleFunc("GET /api/v1/cloud-accounts/{id}/regions", h.listAccountRegions)
 	authed.HandleFunc("GET /api/v1/cloud-accounts/{id}/images", h.listAccountImages)
 	authed.HandleFunc("GET /api/v1/cloud-accounts/{id}/instance-types", h.listAccountInstanceTypes)
