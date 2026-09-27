@@ -27,7 +27,7 @@ import (
 type VolcengineProvider struct {
 	accessKey string
 	secretKey string
-	// host API 端点，默认 open.volcengine.com（测试可替换）。
+	// host API 端点，默认 open.volcengineapi.com（测试可替换）。
 	host string
 	// region 签名与请求使用的 region，默认 cn-north-1。
 	region string
@@ -45,7 +45,7 @@ func NewVolcengineProvider(ak, sk string) *VolcengineProvider {
 	return &VolcengineProvider{
 		accessKey:  ak,
 		secretKey:  sk,
-		host:       "open.volcengine.com",
+		host:       "open.volcengineapi.com",
 		region:     "cn-north-1",
 		service:    "compute",
 		apiVersion: "2020-04-01",
