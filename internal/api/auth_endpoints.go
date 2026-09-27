@@ -77,6 +77,12 @@ func (h *Handler) feishuCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to issue token")
 		return
 	}
+	// 浏览器流程（ua=web）：302 回 Web 控制台，经 URL fragment 携带 JWT
+	// （fragment 不会发往服务端，也不出现在服务端日志）。
+	if q.Get("ua") == "web" {
+		http.Redirect(w, r, "/#token="+token, http.StatusFound)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"token": token, "user": u})
 }
 
