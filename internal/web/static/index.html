@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenCloudLab 控制台</title>
+<style>
+:root{--bg:#f5f7fa;--card:#fff;--line:#e4e8ef;--txt:#1f2937;--sub:#6b7280;--pri:#2563eb;--ok:#059669;--warn:#d97706;--err:#dc2626}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt)}
+a{color:var(--pri);text-decoration:none}
+.hidden{display:none!important}
+/* 登录 */
+#login{max-width:380px;margin:12vh auto;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:32px}
+#login h1{font-size:20px;margin-bottom:4px}
+#login p{color:var(--sub);margin-bottom:20px}
+/* 布局 */
+header{background:var(--card);border-bottom:1px solid var(--line);padding:0 24px;height:56px;display:flex;align-items:center;gap:16px}
+header .logo{font-weight:700;font-size:16px}
+header .sp{flex:1}
+nav{display:flex;gap:4px;margin-top:16px}
+nav button{border:none;background:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:14px;color:var(--sub)}
+nav button.on{background:var(--card);color:var(--pri);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+main{max-width:1100px;margin:0 auto;padding:16px 24px 60px}
+/* 组件 */
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin-top:16px}
+.card h2{font-size:15px;margin-bottom:14px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{color:var(--sub);font-weight:500;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+input,select,button{font:inherit}
+input,select{border:1px solid var(--line);border-radius:8px;padding:7px 10px;background:#fff;min-width:0}
+button.btn{background:var(--pri);color:#fff;border:none;border-radius:8px;padding:7px 16px;cursor:pointer}
+button.btn:disabled{opacity:.5;cursor:not-allowed}
+button.ghost{background:#fff;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+button.danger{color:var(--err)}
+button.mini{padding:3px 10px;font-size:12px;border-radius:6px}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+.row label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--sub)}
+.tag{display:inline-block;padding:1px 10px;border-radius:999px;font-size:12px;white-space:nowrap}
+.t-creating{background:#eff6ff;color:#2563eb}.t-running{background:#ecfdf5;color:var(--ok)}
+.t-destroying{background:#fffbeb;color:var(--warn)}.t-destroyed{background:#f3f4f6;color:var(--sub)}
+.t-failed{background:#fef2f2;color:var(--err)}
+.mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.toast{position:fixed;top:70px;right:24px;z-index:9;padding:10px 18px;border-radius:10px;color:#fff;max-width:420px;box-shadow:0 6px 20px rgba(0,0,0,.15)}
+.toast.ok{background:var(--ok)}.toast.err{background:var(--err)}
+.empty{color:var(--sub);text-align:center;padding:26px 0}
+#patCode{background:#f9fafb;padding:10px;border-radius:8px;word-break:break-all}
+</style>
+</head>
+<body>
+
+<!-- 登录视图 -->
+<div id="login">
+  <h1>OpenCloudLab</h1>
+  <p>云主机快速创建平台 · 功能测试专用</p>
+  <div class="row" style="flex-direction:column;align-items:stretch">
+    <label>用户名 <input id="lu" autocomplete="username" placeholder="admin"></label>
+    <label>密码 <input id="lp" type="password" autocomplete="current-password"></label>
+    <button class="btn" id="loginBtn" style="width:100%">登录</button>
+    <button class="ghost" id="feishuBtn" style="width:100%">飞书登录</button>
+  </div>
+</div>
+
+<!-- 应用视图 -->
+<div id="app" class="hidden">
+  <header>
+    <span class="logo">☁️ OpenCloudLab</span>
+    <span class="sp"></span>
+    <span id="who" style="color:var(--sub);font-size:13px"></span>
+    <button class="ghost" id="logout">退出</button>
+  </header>
+  <main>
+    <nav id="nav">
+      <button data-v="instances" class="on">云主机</button>
+      <button data-v="users">用户管理</button>
+      <button data-v="pats">访问令牌</button>
+      <button data-v="audit">审计日志</button>
+    </nav>
+
+    <!-- 实例 -->
+    <section id="v-instances">
+      <div class="card">
+        <h2>创建云主机</h2>
+        <div class="row">
+          <label>云提供商
+            <select id="cProv"><option value="alicloud">阿里云</option><option value="volcengine">火山引擎</option></select>
+          </label>
+          <label>地域 <select id="cRegion"><option>— 选择地域 —</option></select></label>
+          <label>可用区 <select id="cZone"><option>—</option></select></label>
+          <label>镜像 <select id="cImage" style="max-width:260px"><option>—</option></select></label>
+          <label>规格 <select id="cType"><option>—</option></select></label>
+          <label>时长（秒，默认 3600）<input id="cDur" type="number" min="60" placeholder="3600" style="width:120px"></label>
+          <label>名称（可选）<input id="cName" placeholder="ocw-自动生成" style="width:140px"></label>
+          <button class="btn" id="cBtn">创建</button>
+        </div>
+        <p style="color:var(--sub);font-size:12px;margin-top:10px">镜像与规格实时来自云厂商 API；到期自动销毁，到期前可续用一次。</p>
+      </div>
+      <div class="card">
+        <h2>我的云主机 <button class="ghost mini" id="refresh" style="margin-left:8px">刷新</button></h2>
+        <table><thead><tr>
+          <th>名称/ID</th><th>提供商/地域</th><th>规格/镜像</th><th>状态</th><th>公网 IP</th><th>到期</th><th>操作</th>
+        </tr></thead><tbody id="instBody"></tbody></table>
+      </div>
+    </section>
+
+    <!-- 用户 -->
+    <section id="v-users" class="hidden">
+      <div class="card">
+        <h2>创建用户</h2>
+        <div class="row">
+          <label>用户名 <input id="uName"></label>
+          <label>显示名 <input id="uDisp"></label>
+          <label>密码 <input id="uPass" type="password" placeholder="≥8 位"></label>
+          <label>角色 <select id="uRole"><option value="user">普通用户</option><option value="admin">管理员</option></select></label>
+          <label>单次最长时长（秒，0=默认）<input id="uMax" type="number" min="0" style="width:150px"></label>
+          <button class="btn" id="uBtn">创建</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>用户列表</h2>
+        <table><thead><tr><th>用户名</th><th>角色</th><th>状态</th><th>单次最长时长</th><th>来源</th><th>操作</th></tr></thead>
+        <tbody id="userBody"></tbody></table>
+      </div>
+    </section>
+
+    <!-- PAT -->
+    <section id="v-pats" class="hidden">
+      <div class="card">
+        <h2>创建访问令牌（CLI 用）</h2>
+        <div class="row">
+          <label>名称 <input id="pName" placeholder="my-cli"></label>
+          <label>有效期（天，0=不过期）<input id="pDays" type="number" min="0" value="30" style="width:120px"></label>
+          <button class="btn" id="pBtn">生成</button>
+        </div>
+        <div id="patNew" class="hidden" style="margin-top:12px">
+          <p style="color:var(--warn);font-size:12px">明文仅此一次显示，请立即保存：</p>
+          <div id="patCode" class="mono"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>我的令牌</h2>
+        <table><thead><tr><th>名称</th><th>创建时间</th><th>过期时间</th><th>操作</th></tr></thead>
+        <tbody id="patBody"></tbody></table>
+      </div>
+    </section>
+
+    <!-- 审计 -->
+    <section id="v-audit" class="hidden">
+      <div class="card">
+        <h2>审计日志（最近 100 条）</h2>
+        <table><thead><tr><th>时间</th><th>用户ID</th><th>动作</th><th>详情</th></tr></thead>
+        <tbody id="auditBody"></tbody></table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toastWrap"></div>
+
+<script>
+'use strict';
+const $=s=>document.querySelector(s);
+const arr=d=>Array.isArray(d)?d:(d&&(d.instances||d.users||d.pats||d.logs||d.regions||d.images||d.instanceTypes||d.specs))||[];
+let TOKEN=localStorage.getItem('ocw_token')||'';
+let ME=null;
+
+function toast(msg,ok){const t=document.createElement('div');t.className='toast '+(ok?'ok':'err');t.textContent=msg;
+  $('#toastWrap').appendChild(t);setTimeout(()=>t.remove(),ok?2500:4200)}
+async function api(method,path,body){
+  const r=await fetch(path,{method,headers:Object.assign({'Content-Type':'application/json'},
+    TOKEN?{Authorization:'Bearer '+TOKEN}:{}),body:body?JSON.stringify(body):undefined});
+  if(r.status===401){logout();throw new Error('未认证')}
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(data.error||('HTTP '+r.status));
+  return data}
+
+function fmtDur(sec){if(sec<=0)return '已到期';const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60);
+  return h>0?h+' 时 '+(m>0?m+' 分':''):(m>0?m+' 分':sec+' 秒')}
+function fmtTime(t){if(!t)return '—';const d=new Date(t);return isNaN(d)?'—':d.toLocaleString('zh-CN',{hour12:false})}
+const STTAG=s=>`<span class="tag t-${s}">${({creating:'创建中',running:'运行中',destroying:'销毁中',destroyed:'已销毁',failed:'失败'})[s]||s}</span>`;
+
+/* ---------- 登录 ---------- */
+$('#loginBtn').onclick=async()=>{try{
+  const d=await api('POST','/api/v1/auth/login',{username:$('#lu').value.trim(),password:$('#lp').value});
+  TOKEN=d.token;localStorage.setItem('ocw_token',TOKEN);enter()}catch(e){toast('登录失败：'+e.message)}};
+$('#lp').addEventListener('keydown',e=>{if(e.key==='Enter')$('#loginBtn').click()});
+$('#feishuBtn').onclick=async()=>{try{const d=await api('POST','/api/v1/auth/feishu/login');
+  const sep=d.authorize_url.includes('?')?'&':'?';
+  location.href=d.authorize_url+sep+'ua=web'}catch(e){toast(e.message)}};
+// OAuth 回调：?token= 由 URL 携带（若服务端支持）；常见为页面直接落地。
+if(location.hash.startsWith('#token=')){TOKEN=location.hash.slice(7);localStorage.setItem('ocw_token',TOKEN)}
+
+function logout(){TOKEN='';localStorage.removeItem('ocw_token');location.reload()}
+$('#logout').onclick=logout;
+
+async function enter(){
+  try{ME=await api('GET','/api/v1/me')}catch(e){return}
+  $('#login').classList.add('hidden');$('#app').classList.remove('hidden');
+  $('#who').textContent=(ME.displayName||ME.username)+' · '+ME.role;
+  const admin=ME.role==='admin';
+  $('#nav [data-v=users]').classList.toggle('hidden',!admin);
+  $('#nav [data-v=audit]').classList.toggle('hidden',!admin);
+  if(!admin){$('#v-users').classList.add('hidden')}
+  loadInstances();loadRegions();loadPATs();if(admin){loadUsers();loadAudit()}
+  setInterval(loadInstances,15000)}
+
+/* ---------- 导航 ---------- */
+$('#nav').onclick=e=>{const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x===b));
+  ['instances','users','pats','audit'].forEach(v=>$('#v-'+v).classList.toggle('hidden',v!==b.dataset.v))};
+
+/* ---------- 创建表单级联 ---------- */
+$('#cProv').onchange=()=>{loadRegions()};
+async function loadRegions(){const p=$('#cProv').value;
+  $('#cRegion').innerHTML='<option>加载中…</option>';
+  try{const d=await api('GET',`/api/v1/providers/${p}/regions`);
+    $('#cRegion').innerHTML=arr(d).map(r=>`<option>${esc(typeof r==='string'?r:r.id)}</option>`).join('')||'<option value="">（无）</option>';
+    loadZones()}catch(e){$('#cRegion').innerHTML='<option value="">加载失败</option>';toast('地域加载失败：'+e.message)}}
+async function loadZones(){const p=$('#cProv').value,r=$('#cRegion').value;if(!r)return;
+  $('#cZone').innerHTML='<option>加载中…</option>';$('#cImage').innerHTML='<option>—</option>';$('#cType').innerHTML='<option>—</option>';
+  try{const d=await api('GET',`/api/v1/providers/${p}/instance-types?region=${encodeURIComponent(r)}`);
+    $('#cType').innerHTML=arr(d).map(t=>`<option value="${t.id}">${t.id}（${t.cpu}C/${Math.round(t.memoryMB/1024)}G）</option>`).join('')||'<option value="">（无）</option>'}
+  catch(e){$('#cType').innerHTML='<option value="">加载失败</option>'}
+  try{const d=await api('GET',`/api/v1/providers/${p}/images?region=${encodeURIComponent(r)}`);
+    $('#cImage').innerHTML=arr(d).map(i=>`<option value="${i.id}">${i.name||i.id} ${i.osType||''}</option>`).join('')||'<option value="">（无）</option>'}
+  catch(e){$('#cImage').innerHTML='<option value="">加载失败</option>'}
+  // 可用区：用 zone 查询若无专端点则留默认
+  $('#cZone').innerHTML='<option value="">（默认）</option>'}
+$('#cRegion').onchange=loadZones;
+
+$('#cBtn').onclick=async()=>{try{
+  await api('POST','/api/v1/instances',{provider:$('#cProv').value,region:$('#cRegion').value,
+    zone:$('#cZone').value||'',imageID:$('#cImage').value,instanceType:$('#cType').value,
+    durationSec:parseInt($('#cDur').value)||0,name:$('#cName').value.trim()});
+  toast('创建请求已受理，等待 OpenTofu 就绪',true);loadInstances()}catch(e){toast('创建失败：'+e.message)}};
+
+/* ---------- 实例列表 ---------- */
+async function loadInstances(){if(!TOKEN)return;let list;
+  try{list=arr(await api('GET','/api/v1/instances'))}catch(e){return}
+  const now=Date.now();
+  $('#instBody').innerHTML=list.length?list.map(i=>{
+    const left=Math.floor((new Date(i.expiresAt)-now)/1000);
+    const canRenew=i.status==='running'&&!i.renewedAt&&left>0;
+    return `<tr>
+      <td><b>${esc(i.name)}</b><br><span class="mono" style="color:var(--sub)">#${i.id}</span></td>
+      <td>${({alicloud:'阿里云',volcengine:'火山引擎'})[i.provider]||i.provider}<br>${esc(i.region)} ${esc(i.zone||'')}</td>
+      <td class="mono">${esc(i.instanceType)}<br><span style="color:var(--sub)">${esc(i.imageID)}</span></td>
+      <td>${STTAG(i.status)}${i.errorMessage?`<br><span style="color:var(--err);font-size:12px">${esc(i.errorMessage)}</span>`:''}</td>
+      <td class="mono">${i.publicIP?`<a href="http://${i.publicIP}" target="_blank">${i.publicIP}</a>`:'—'}</td>
+      <td>${fmtTime(i.expiresAt)}<br><span style="color:${left<600?'var(--err)':'var(--sub)'};font-size:12px">${i.status==='running'?('剩 '+fmtDur(left)):''}${i.renewedAt?'<br>已续用':''}</span></td>
+      <td style="white-space:nowrap">
+        ${canRenew?`<button class="ghost mini" onclick="renew(${i.id})">续用 1 小时</button>`:''}
+        ${(i.status==='running'||i.status==='failed')?`<button class="ghost mini danger" onclick="destroy(${i.id})">销毁</button>`:''}
+      </td></tr>`}).join(''):'<tr><td colspan="7" class="empty">暂无云主机</td></tr>'}
+window.renew=async id=>{try{await api('POST',`/api/v1/instances/${id}/renew`,{});toast('续用成功',true);loadInstances()}
+  catch(e){toast('续用失败：'+e.message)}};
+window.destroy=async id=>{if(!confirm('确认销毁该云主机？'))return;
+  try{await api('DELETE',`/api/v1/instances/${id}`);toast('销毁已发起',true);loadInstances()}
+  catch(e){toast('销毁失败：'+e.message)}};
+$('#refresh').onclick=loadInstances;
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+/* ---------- 用户管理 ---------- */
+$('#uBtn').onclick=async()=>{try{
+  await api('POST','/api/v1/users',{username:$('#uName').value.trim(),displayName:$('#uDisp').value.trim(),
+    password:$('#uPass').value,role:$('#uRole').value,maxDurationSec:parseInt($('#uMax').value)||0});
+  toast('用户已创建',true);$('#uName').value=$('#uDisp').value=$('#uPass').value='';loadUsers()}
+  catch(e){toast('创建失败：'+e.message)}};
+async function loadUsers(){try{const d=await api('GET','/api/v1/users');
+  $('#userBody').innerHTML=arr(d).map(u=>`<tr>
+    <td><b>${esc(u.username)}</b><br><span style="color:var(--sub)">${esc(u.displayName||'')}</span></td>
+    <td>${u.role==='admin'?'管理员':'用户'}</td>
+    <td>${u.status==='active'?'✅ 正常':'⛔ 禁用'}</td>
+    <td>${u.maxDurationSec>0?fmtDur(u.maxDurationSec):'全局默认'}</td>
+    <td>${u.provider}</td>
+    <td style="white-space:nowrap">
+      <button class="ghost mini" onclick="patchUser(${u.id},${u.status==='active'?'false':'true'})">${u.status==='active'?'禁用':'启用'}</button>
+      <button class="ghost mini" onclick="setQuota(${u.id},${u.maxDurationSec})">配额</button>
+      <button class="ghost mini danger" onclick="delUser(${u.id},'${esc(u.username)}')">删除</button>
+    </td></tr>`).join(''):''}catch(e){}}
+window.patchUser=async(id,active)=>{try{await api('PATCH',`/api/v1/users/${id}`,{status:active?'active':'disabled'});
+  toast('已更新',true);loadUsers()}catch(e){toast(e.message)}};
+window.setQuota=async(id,cur)=>{const v=prompt('单次最长使用时长（秒，0=用全局默认）',cur||0);
+  if(v===null)return;try{await api('PATCH',`/api/v1/users/${id}`,{maxDurationSec:parseInt(v)||0});toast('配额已更新',true);loadUsers()}catch(e){toast(e.message)}};
+window.delUser=async(id,name)=>{if(!confirm(`确认删除用户 ${name}？其名下实例记录将一并删除。`))return;
+  try{await api('DELETE',`/api/v1/users/${id}`);toast('已删除',true);loadUsers()}catch(e){toast(e.message)}};
+
+/* ---------- PAT ---------- */
+$('#pBtn').onclick=async()=>{try{
+  const d=await api('POST','/api/v1/auth/pats',{name:$('#pName').value.trim()||'cli',expiresInDays:parseInt($('#pDays').value)||0});
+  $('#patNew').classList.remove('hidden');$('#patCode').textContent=d.token;loadPATs()}
+  catch(e){toast('生成失败：'+e.message)}};
+async function loadPATs(){try{const d=await api('GET','/api/v1/auth/pats');
+  $('#patBody').innerHTML=arr(d).map(p=>`<tr>
+    <td>${esc(p.name)}</td><td>${fmtTime(p.createdAt)}</td>
+    <td>${p.expiresAt&&p.expiresAt>'0001'?fmtTime(p.expiresAt):'永不过期'}</td>
+    <td><button class="ghost mini danger" onclick="delPAT(${p.id})">删除</button></td></tr>`).join(''):'<tr><td colspan="4" class="empty">暂无令牌</td></tr>'}catch(e){}}
+window.delPAT=async id=>{if(!confirm('确认删除该令牌？使用它的 CLI 将立即失效。'))return;
+  try{await api('DELETE',`/api/v1/auth/pats/${id}`);toast('已删除',true);loadPATs()}catch(e){toast(e.message)}};
+
+/* ---------- 审计 ---------- */
+async function loadAudit(){try{const d=await api('GET','/api/v1/admin/audit-logs?limit=100');
+  $('#auditBody').innerHTML=arr(d).map(l=>`<tr>
+    <td style="white-space:nowrap">${fmtTime(l.createdAt)}</td><td>#${l.userID}</td>
+    <td class="mono">${esc(l.action)}</td><td>${esc(l.detail)}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">暂无日志</td></tr>'}catch(e){}}
+
+/* 启动 */
+if(TOKEN){enter()}
+</script>
+</body>
+</html>

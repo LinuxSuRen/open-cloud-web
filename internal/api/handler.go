@@ -8,9 +8,11 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/linuxsuren/open-cloud-web/internal/auth"
+	"github.com/linuxsuren/open-cloud-web/internal/web"
 )
 
 // Config 是装配层注入的 API 配置。
@@ -96,7 +98,15 @@ func (h *Handler) Routes() http.Handler {
 	public.Handle("/api/v1/users/", h.requireAuthWrapper()(requireAdmin(admin)))
 	public.Handle("/api/v1/admin/", h.requireAuthWrapper()(requireAdmin(admin)))
 
-	mux.Handle("/", public)
+	// 非 API 路径（"/" 与静态资源）回落到内嵌 Web 控制台；
+	// /api/、/healthz 仍交给 public mux。
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/healthz" {
+			public.ServeHTTP(w, r)
+			return
+		}
+		web.Handler().ServeHTTP(w, r)
+	}))
 	return requestIDLog(h.Log)(corsMiddleware(h.Cfg.CORSAllowedOrigin)(mux))
 }
 
