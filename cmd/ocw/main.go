@@ -210,17 +210,24 @@ func (a *storeSchedulerAdapter) ListInstancesByStatuses(statuses []scheduler.Ins
 	return out, nil
 }
 
+// UpdateInstance 采用“读取-合并-写回”：scheduler.Instance 只携带其管辖的
+// 字段（Status/ErrorMessage 等），而 store.UpdateInstance 是全列 UPDATE，
+// 直接写回部分字段会清空 Name/ImageID/PublicIP 等。先取完整记录，
+// 覆盖调度器拥有的字段后再落库。
 func (a *storeSchedulerAdapter) UpdateInstance(i *scheduler.Instance) error {
-	return a.store.UpdateInstance(&model.Instance{
-		ID:           i.ID,
-		UserID:       i.UserID,
-		Status:       model.InstanceStatus(i.Status),
-		TfWorkspace:  i.TfWorkspace,
-		ErrorMessage: i.ErrorMessage,
-		ExpiresAt:    i.ExpiresAt,
-		CreatedAt:    i.CreatedAt,
-		UpdatedAt:    i.UpdatedAt,
-	})
+	full, err := a.store.GetInstance(i.ID)
+	if err != nil {
+		return err
+	}
+	full.Status = model.InstanceStatus(i.Status)
+	full.ErrorMessage = i.ErrorMessage
+	if !i.ExpiresAt.IsZero() {
+		full.ExpiresAt = i.ExpiresAt
+	}
+	if !i.UpdatedAt.IsZero() {
+		full.UpdatedAt = i.UpdatedAt
+	}
+	return a.store.UpdateInstance(full)
 }
 
 // cloudRegistryAdapter 把 internal/cloud 的全局注册表适配为 api.CloudRegistry。
