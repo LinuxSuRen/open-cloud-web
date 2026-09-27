@@ -279,7 +279,7 @@ async function loadUsers(){try{const d=await api('GET','/api/v1/users');
       <button class="ghost mini" onclick="patchUser(${u.id},${u.status==='active'?'false':'true'})">${u.status==='active'?'禁用':'启用'}</button>
       <button class="ghost mini" onclick="setQuota(${u.id},${u.maxDurationSec})">配额</button>
       <button class="ghost mini danger" onclick="delUser(${u.id},'${esc(u.username)}')">删除</button>
-    </td></tr>`).join(''):''}catch(e){}}
+    </td></tr>`).join('')||'<tr><td colspan="6" class="empty">暂无用户</td></tr>'}catch(e){}}
 window.patchUser=async(id,active)=>{try{await api('PATCH',`/api/v1/users/${id}`,{status:active?'active':'disabled'});
   toast('已更新',true);loadUsers()}catch(e){toast(e.message)}};
 window.setQuota=async(id,cur)=>{const v=prompt('单次最长使用时长（秒，0=用全局默认）',cur||0);
@@ -296,7 +296,7 @@ async function loadPATs(){try{const d=await api('GET','/api/v1/auth/pats');
   $('#patBody').innerHTML=arr(d).map(p=>`<tr>
     <td>${esc(p.name)}</td><td>${fmtTime(p.createdAt)}</td>
     <td>${p.expiresAt&&p.expiresAt>'0001'?fmtTime(p.expiresAt):'永不过期'}</td>
-    <td><button class="ghost mini danger" onclick="delPAT(${p.id})">删除</button></td></tr>`).join(''):'<tr><td colspan="4" class="empty">暂无令牌</td></tr>'}catch(e){}}
+    <td><button class="ghost mini danger" onclick="delPAT(${p.id})">删除</button></td></tr>`).join('')||'<tr><td colspan="4" class="empty">暂无令牌</td></tr>'}catch(e){}}
 window.delPAT=async id=>{if(!confirm('确认删除该令牌？使用它的 CLI 将立即失效。'))return;
   try{await api('DELETE',`/api/v1/auth/pats/${id}`);toast('已删除',true);loadPATs()}catch(e){toast(e.message)}};
 
@@ -304,7 +304,7 @@ window.delPAT=async id=>{if(!confirm('确认删除该令牌？使用它的 CLI �
 async function loadAudit(){try{const d=await api('GET','/api/v1/admin/audit-logs?limit=100');
   $('#auditBody').innerHTML=arr(d).map(l=>`<tr>
     <td style="white-space:nowrap">${fmtTime(l.createdAt)}</td><td>#${l.userID}</td>
-    <td class="mono">${esc(l.action)}</td><td>${esc(l.detail)}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">暂无日志</td></tr>'}catch(e){}}
+    <td class="mono">${esc(l.action)}</td><td>${esc(l.detail)}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">暂无日志</td></tr>'}catch(e){}}
 
 /* 启动 */
 if(TOKEN){enter()}
