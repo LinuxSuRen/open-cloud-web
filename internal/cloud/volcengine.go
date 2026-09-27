@@ -46,7 +46,7 @@ func NewVolcengineProvider(ak, sk string) *VolcengineProvider {
 		accessKey:  ak,
 		secretKey:  sk,
 		host:       "open.volcengineapi.com",
-		region:     "cn-north-1",
+		region:     "cn-beijing",
 		service:    "ecs",
 		apiVersion: "2020-04-01",
 		httpClient: &http.Client{Timeout: httpClientTimeout * time.Second},
