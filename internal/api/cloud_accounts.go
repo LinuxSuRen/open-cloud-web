@@ -213,6 +213,28 @@ func (h *Handler) listAccountRegions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, regions)
 }
 
+// GET /api/v1/cloud-accounts/{id}/zones?region=
+func (h *Handler) listAccountZones(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.accountProvider(w, r)
+	if !ok {
+		return
+	}
+	region := r.URL.Query().Get("region")
+	if region == "" {
+		writeError(w, http.StatusBadRequest, "region query parameter is required")
+		return
+	}
+	zones, err := p.ListZones(r.Context(), region)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "failed to list zones: "+err.Error())
+		return
+	}
+	if zones == nil {
+		zones = []string{}
+	}
+	writeJSON(w, http.StatusOK, zones)
+}
+
 // GET /api/v1/cloud-accounts/{id}/images?region=
 func (h *Handler) listAccountImages(w http.ResponseWriter, r *http.Request) {
 	p, ok := h.accountProvider(w, r)

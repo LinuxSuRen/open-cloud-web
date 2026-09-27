@@ -132,6 +132,28 @@ func (p *AlicloudProvider) ListRegions(ctx context.Context) ([]string, error) {
 	return regions, nil
 }
 
+// ListZones 调用 DescribeZones（按地域），
+// https://help.aliyun.com/zh/ecs/developer-reference/api-describezones
+func (p *AlicloudProvider) ListZones(ctx context.Context, region string) ([]string, error) {
+	var resp struct {
+		Zones struct {
+			Zone []struct {
+				ZoneID string `json:"ZoneId"`
+			} `json:"Zone"`
+		} `json:"Zones"`
+	}
+	if err := p.callRPC(ctx, "DescribeZones", url.Values{"RegionId": {region}}, &resp); err != nil {
+		return nil, err
+	}
+	zones := make([]string, 0, len(resp.Zones.Zone))
+	for _, z := range resp.Zones.Zone {
+		if z.ZoneID != "" {
+			zones = append(zones, z.ZoneID)
+		}
+	}
+	return zones, nil
+}
+
 // callRPC 发起一次 RPC 签名 v1 调用并解析 JSON 响应。
 // 非 2xx 或响应携带 Code 字段时返回 *APIError（透传云端错误码）。
 func (p *AlicloudProvider) callRPC(ctx context.Context, action string, extra url.Values, out any) error {

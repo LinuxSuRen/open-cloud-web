@@ -8,7 +8,7 @@ const form = reactive({
   accountID: null, region: '', zone: '', imageID: '',
   instanceType: '', durationSec: null, name: '',
 })
-const catalog = reactive({ regions: [], images: [], types: [], loading: '' })
+const catalog = reactive({ regions: [], zones: [], images: [], types: [], loading: '' })
 const busy = ref(false)
 let timer = null
 
@@ -29,6 +29,7 @@ async function loadAccounts() {
 async function loadRegions() {
   catalog.loading = 'regions'
   catalog.regions = []
+  catalog.zones = []
   catalog.images = []
   catalog.types = []
   try {
@@ -40,10 +41,21 @@ async function loadRegions() {
   }
 }
 
+async function loadZones() {
+  catalog.zones = []
+  form.zone = ''
+  if (!form.region) return
+  try {
+    catalog.zones = arr(await api('GET', `/api/v1/cloud-accounts/${form.accountID}/zones?region=${encodeURIComponent(form.region)}`))
+    form.zone = catalog.zones[0] || ''
+  } catch { /* 错误时留空，创建前的校验会提示 */ }
+}
+
 async function loadCatalog() {
   catalog.loading = 'catalog'
   catalog.images = []
   catalog.types = []
+  loadZones()
   const base = `/api/v1/cloud-accounts/${form.accountID}`
   const r = encodeURIComponent(form.region)
   const [imgs, types] = await Promise.allSettled([
@@ -129,7 +141,9 @@ const accountName = (id) => accounts.value.find((a) => a.id === id)?.name || `#$
         </label>
         <label>可用区
           <select v-model="form.zone">
-            <option value="">（默认）</option>
+            <option v-if="catalog.loading" value="">加载中…</option>
+            <option v-for="z in catalog.zones" :key="z" :value="z">{{ z }}</option>
+            <option v-if="!catalog.loading && !catalog.zones.length" value="">（该地域无可用区）</option>
           </select>
         </label>
         <label>镜像
@@ -153,7 +167,7 @@ const accountName = (id) => accounts.value.find((a) => a.id === id)?.name || `#$
         <label>名称（可选）
           <input v-model="form.name" placeholder="自动生成" style="width:130px" />
         </label>
-        <button class="btn" :disabled="busy || !form.imageID || !form.instanceType" @click="create">
+        <button class="btn" :disabled="busy || !form.imageID || !form.instanceType || !form.zone" @click="create">
           {{ busy ? '创建中…' : '创建' }}
         </button>
       </div>
