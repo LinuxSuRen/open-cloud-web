@@ -15,7 +15,7 @@ terraform {
     volcengine = {
       source  = "volcengine/volcengine"
       # 锁定 1.x 大版本（>= 约束，允许补丁升级）。
-      version = ">= 1.0.0, < 2.0.0"
+      version = ">= 0.0.150"
     }
   }
 }

@@ -116,7 +116,9 @@ func (r *runner) Apply(ctx context.Context, workspace string, vars map[string]st
 	defer r.mu.Unlock()
 
 	wsDir := r.workspaceDir(workspace)
-	if err := os.MkdirAll(filepath.Join(r.cfg.DataDir, "plugin-cache"), 0o755); err != nil {
+	// 插件缓存目录必须用绝对路径：tofu 以 workspace 为工作目录执行，
+	// 相对路径会解析到 workspace 内部导致 "cannot be opened"。
+	if _, err := r.pluginCacheDir(); err != nil {
 		return err
 	}
 	if err := ensureWorkspace(wsDir, provider, r.cfg.Templates); err != nil {
@@ -202,9 +204,27 @@ func (r *runner) workspaceDir(workspace string) string {
 func (r *runner) env(provider string) []string {
 	env := append(os.Environ(),
 		"TF_IN_AUTOMATION=1",
-		"TF_PLUGIN_CACHE_DIR="+filepath.Join(r.cfg.DataDir, "plugin-cache"),
+		"TF_PLUGIN_CACHE_DIR="+r.pluginCacheDirPath(),
 	)
 	return append(env, r.EnvVars(provider)...)
+}
+
+// pluginCacheDir 创建（若缺）并返回插件缓存目录的绝对路径。
+func (r *runner) pluginCacheDir() (string, error) {
+	dir, err := filepath.Abs(filepath.Join(r.cfg.DataDir, "plugin-cache"))
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+// pluginCacheDirPath 已知目录存在时直接取绝对路径（env 组装用）。
+func (r *runner) pluginCacheDirPath() string {
+	dir, _ := filepath.Abs(filepath.Join(r.cfg.DataDir, "plugin-cache"))
+	return dir
 }
 
 // detectProvider 从 workspace 已写入的 tfvars 里读回 provider，
