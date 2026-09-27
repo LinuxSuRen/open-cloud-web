@@ -63,7 +63,12 @@ func run() error {
 	}
 
 	// 5. 云提供商 registry（alicloud / volcengine 凭据来自环境变量）。
-	// 具体_PROVIDER 构造函数由 internal/cloud agent 提供；就位后在此 Register。
+	// AK 为空也注册：端点会透传云 API 的鉴权错误，便于定位配置缺失。
+	cloud.Register(cloud.NewAlicloudProvider(cfg.AlicloudAccessKey, cfg.AlicloudSecretKey))
+	cloud.Register(cloud.NewVolcengineProvider(cfg.VolcengineAccessKey, cfg.VolcengineSecretKey))
+	if cfg.AlicloudAccessKey == "" && cfg.VolcengineAccessKey == "" {
+		log.Printf("[ocw] warning: no cloud credentials configured (OCW_ALICLOUD_* / OCW_VOLCENGINE_*)")
+	}
 
 	// 6. OpenTofu runner（tofu.Runner 契约：Apply/Destroy/OutputIP）。
 	runner := tofu.NewRunner(tofu.Config{
@@ -105,6 +110,7 @@ func run() error {
 		api.Config{
 			DefaultDurationSec: cfg.DefaultDurationSec,
 			MaxDurationSec:     cfg.MaxDurationSec,
+			CORSAllowedOrigin:  cfg.CORSAllowedOrigin,
 		},
 	)
 
@@ -151,31 +157,25 @@ func bootstrapAdmin(st store.Store, token string) error {
 		}
 	}
 	now := time.Now().UTC()
-	admin := &model.User{
-		Username:    "admin",
-		DisplayName: "Administrator",
-		Role:        model.RoleAdmin,
-		Status:      model.StatusActive,
-		Provider:    "local",
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-	if err := st.CreateUser(admin); err != nil {
-		return err
-	}
-	// 可选能力：store 支持 SetUserPasswordHash 时保存 bcrypt 哈希。
 	hash, err := bcrypt.GenerateFromPassword([]byte(token), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
-	if s, ok := st.(interface {
-		SetUserPasswordHash(userID int64, hash string) error
-	}); ok {
-		if err := s.SetUserPasswordHash(admin.ID, string(hash)); err != nil {
-			return err
-		}
+	admin := &model.User{
+		Username:     "admin",
+		DisplayName:  "Administrator",
+		Role:         model.RoleAdmin,
+		Status:       model.StatusActive,
+		Provider:     "local",
+		ProviderSub:  "admin", // users(provider, provider_sub) 唯一索引要求
+		PasswordHash: string(hash),
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
-	log.Printf("[ocw] bootstrap admin user created")
+	if err := st.CreateUser(admin); err != nil {
+		return err
+	}
+	log.Printf("[ocw] bootstrap admin user created (username=admin, password=OCW_ADMIN_BOOTSTRAP_TOKEN, login via POST /api/v1/auth/login)")
 	return nil
 }
 

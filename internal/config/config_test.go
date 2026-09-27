@@ -57,7 +57,7 @@ func TestDefaults(t *testing.T) {
 }
 
 func TestLoadDefaults(t *testing.T) {
-	setEnv(t, nil)
+	setEnv(t, map[string]string{"OCW_JWT_SECRET": "0123456789abcdef"})
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -72,6 +72,7 @@ func TestLoadPrefixOverridesPlain(t *testing.T) {
 		"OCW_LISTEN_ADDR": ":9090",
 		"LISTEN_ADDR":     ":7070", // OCW_ 前缀优先
 		"DB_PATH":         "/tmp/plain.db",
+		"OCW_JWT_SECRET":  "0123456789abcdef",
 	})
 	cfg, err := Load()
 	if err != nil {
@@ -91,6 +92,7 @@ func TestLoadInts(t *testing.T) {
 		"OCW_MAX_DURATION_SEC":       "7200",
 		"OCW_CREATING_TIMEOUT_SEC":   "300",
 		"OCW_SCHEDULER_INTERVAL_SEC": "15",
+		"OCW_JWT_SECRET":             "0123456789abcdef",
 	})
 	cfg, err := Load()
 	if err != nil {
@@ -129,5 +131,12 @@ func TestLoadValidation(t *testing.T) {
 				t.Errorf("Load() should fail for %v", tt.env)
 			}
 		})
+	}
+}
+
+func TestLoadRejectsShortJWTSecret(t *testing.T) {
+	setEnv(t, map[string]string{"OCW_JWT_SECRET": "short"})
+	if _, err := Load(); err == nil {
+		t.Fatal("短 JWT_SECRET 应当拒绝启动")
 	}
 }

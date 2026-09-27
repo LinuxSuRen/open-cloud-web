@@ -30,6 +30,7 @@ type Config struct {
 	AlicloudSecretKey    string //
 	VolcengineAccessKey  string //
 	VolcengineSecretKey  string //
+	CORSAllowedOrigin    string // 允许的 CORS Origin（空表示不加 CORS 头）
 }
 
 // Defaults 返回带默认值的配置（不读环境变量）。
@@ -67,6 +68,7 @@ func Load() (Config, error) {
 	cfg.AlicloudSecretKey = getEnv("ALICLOUD_SECRET_KEY", cfg.AlicloudSecretKey)
 	cfg.VolcengineAccessKey = getEnv("VOLCENGINE_ACCESS_KEY", cfg.VolcengineAccessKey)
 	cfg.VolcengineSecretKey = getEnv("VOLCENGINE_SECRET_KEY", cfg.VolcengineSecretKey)
+	cfg.CORSAllowedOrigin = getEnv("CORS_ALLOWED_ORIGIN", cfg.CORSAllowedOrigin)
 
 	var err error
 	if cfg.DefaultDurationSec, err = getIntEnv("DEFAULT_DURATION_SEC", cfg.DefaultDurationSec); err != nil {
@@ -94,6 +96,11 @@ func Load() (Config, error) {
 	}
 	if cfg.SchedulerIntervalSec <= 0 {
 		return cfg, fmt.Errorf("config: SchedulerIntervalSec must be > 0, got %d", cfg.SchedulerIntervalSec)
+	}
+	// JWT secret 是认证体系的根：空/过短 secret 下任何人都能离线伪造
+	// admin JWT（HS256），属于完全认证绕过，必须在启动时拒绝。
+	if len(cfg.JWTSecret) < 16 {
+		return cfg, fmt.Errorf("config: JWT_SECRET must be set and at least 16 bytes (got %d)", len(cfg.JWTSecret))
 	}
 	return cfg, nil
 }
