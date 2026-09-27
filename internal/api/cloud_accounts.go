@@ -3,6 +3,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/linuxsuren/open-cloud-web/internal/auth"
@@ -173,6 +174,27 @@ func (h *Handler) accountRunner(u *auth.User, accountID int64) (Runner, *model.C
 }
 
 var errForbiddenAccount = errors.New("not your cloud account")
+
+// POST /api/v1/cloud-accounts/{id}/test：用账号凭据实际调用一次云 API
+// （列可用区，读操作、无副作用），返回可用性结论与具体错误信息。
+func (h *Handler) testAccount(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.accountProvider(w, r)
+	if !ok {
+		return
+	}
+	regions, err := p.ListRegions(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":  "error",
+			"message": "账号不可用：" + err.Error(),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":  "ok",
+		"message": fmt.Sprintf("账号可用，凭据有效（成功获取 %d 个可用区/地域）", len(regions)),
+	})
+}
 
 // GET /api/v1/cloud-accounts/{id}/regions
 func (h *Handler) listAccountRegions(w http.ResponseWriter, r *http.Request) {
