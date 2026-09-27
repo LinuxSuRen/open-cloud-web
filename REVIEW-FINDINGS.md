@@ -1,5 +1,7 @@
 # 交叉检验报告（agent-f）
 
+> **修复状态（集成者注，commit ede1edb 及后续）**：S1–S6 全部严重项已修复（S1 读取-合并-写回；S2 vars 补 provider；S3 password_hash 落库 + POST /auth/login + 失败锁定；S4 JWT_SECRET 启动强校验；S5 main 注册双 provider；S6 stdout/stderr 分离 buffer）；建议项已修 A1（tfvars 数字/键名）、A3（销毁失败保持 Destroying 交调度器重试）、A6（CORS 接线）。`go vet` 与 `go test -race ./...` 全绿。A2/A4/A5/A7/A8 及 T 系列留作后续迭代（风险可控，报告保留供参考）。
+
 审查范围：HEAD `8bc81c5`（集成统一镜像类型后）。只读审查 + `go vet` / `go test -race` 全量验证 + 临时测试程序，未修改任何业务代码。
 
 > 说明：原计划联网核对 alicloud/volcengine provider 文档，web 搜索因配额不足不可用；模板字段按模型知识核对，见 T8。

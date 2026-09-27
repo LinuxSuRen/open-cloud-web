@@ -46,7 +46,11 @@ func (l *loginLimiter) recordFailure(username string, now time.Time) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	a := l.attempts[username]
-	if a == nil || now.After(a.lockedTil.Add(loginLockout)) {
+	if a == nil {
+		a = &loginAttempt{}
+		l.attempts[username] = a
+	} else if !a.lockedTil.IsZero() && now.After(a.lockedTil) {
+		// 锁定期已过：清零重新计数。
 		a = &loginAttempt{}
 		l.attempts[username] = a
 	}
