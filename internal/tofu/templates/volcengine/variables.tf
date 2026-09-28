@@ -52,3 +52,15 @@ variable "secret_key" {
   sensitive   = true
   default     = ""
 }
+
+variable "system_volume_type" {
+  description = "系统盘类型：PTSSD / ESSD_PL0 / ESSD_PL1 / ESSD_PL2 / ESSD_FlexPL"
+  type        = string
+  default     = "ESSD_PL0"
+}
+
+variable "system_volume_size" {
+  description = "系统盘容量（GiB）"
+  type        = number
+  default     = 40
+}
