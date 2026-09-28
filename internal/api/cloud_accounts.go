@@ -86,6 +86,74 @@ func (h *Handler) createAccount(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, a)
 }
 
+type patchAccountReq struct {
+	Name       *string `json:"name"`
+	AccessKey  *string `json:"accessKey"`
+	SecretKey  *string `json:"secretKey"`
+	Region     *string `json:"region"`
+}
+
+// patchAccount PATCH /api/v1/cloud-accounts/{id}：修改配置（所有者或 admin）。
+// provider 不可改（涉及模板与凭据体系）；secret 重新加密落库。
+func (h *Handler) patchAccount(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	a, err := h.Store.GetCloudAccount(id)
+	if errors.Is(err, auth.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "cloud account not found")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load cloud account")
+		return
+	}
+	if a.UserID != u.ID && u.Role != auth.RoleAdmin {
+		writeError(w, http.StatusForbidden, "not your cloud account")
+		return
+	}
+	var req patchAccountReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Name != nil {
+		if *req.Name == "" || len(*req.Name) > 64 {
+			writeError(w, http.StatusBadRequest, "name must be 1-64 chars")
+			return
+		}
+		a.Name = *req.Name
+	}
+	if req.AccessKey != nil {
+		if *req.AccessKey == "" || len(*req.AccessKey) > maxKeyName {
+			writeError(w, http.StatusBadRequest, "accessKey must be 1-128 chars")
+			return
+		}
+		a.AccessKey = *req.AccessKey
+	}
+	if req.SecretKey != nil {
+		if len(*req.SecretKey) < 8 || len(*req.SecretKey) > maxKeyName {
+			writeError(w, http.StatusBadRequest, "secretKey must be 8-128 chars")
+			return
+		}
+		enc, err := encryptSecret(*req.SecretKey, h.Cfg.SecretKey)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to encrypt secret")
+			return
+		}
+		a.SecretEnc = enc
+	}
+	if req.Region != nil {
+		a.Region = *req.Region
+	}
+	if err := h.Store.UpdateCloudAccount(a); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update cloud account")
+		return
+	}
+	h.audit(u.ID, "cloud_account.update", a.Name)
+	writeJSON(w, http.StatusOK, a)
+}
+
 // deleteAccount DELETE /api/v1/cloud-accounts/{id}：所有者或 admin。
 func (h *Handler) deleteAccount(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())

@@ -6,6 +6,8 @@ const accounts = ref([])
 const form = reactive({ name: '', provider: 'alicloud', accessKey: '', secretKey: '' })
 const busy = ref(false)
 const testing = ref(0) // 正在测试的账号 ID
+const editing = ref(0) // 正在编辑的账号 ID
+const editForm = reactive({ name: '', accessKey: '', secretKey: '' })
 const results = reactive({}) // id -> { status, message }
 
 async function load() {
@@ -24,6 +26,23 @@ async function create() {
   } finally {
     busy.value = false
   }
+}
+
+function startEdit(a) {
+  editing.value = a.id
+  editForm.name = a.name
+  editForm.accessKey = a.accessKey
+  editForm.secretKey = ''
+}
+
+async function saveEdit(a) {
+  const body = { name: editForm.name.trim() || a.name, accessKey: editForm.accessKey || a.accessKey }
+  if (editForm.secretKey) body.secretKey = editForm.secretKey
+  try {
+    await api('PATCH', `/api/v1/cloud-accounts/${a.id}`, body)
+    editing.value = 0
+    await load()
+  } catch (e) { alert('保存失败：' + e.message) }
 }
 
 async function test(a) {
@@ -77,11 +96,23 @@ const PROV = { alicloud: '阿里云', volcengine: '火山引擎' }
         <tbody>
           <tr v-if="!accounts.length"><td colspan="5" class="empty">还没有云账号，先添加一个再创建云主机</td></tr>
           <tr v-for="a in accounts" :key="a.id">
-            <td><b>{{ a.name }}</b></td>
+            <td>
+              <b>{{ a.name }}</b>
+              <div v-if="editing === a.id" class="row" style="margin-top:8px;flex-direction:column;align-items:stretch;min-width:260px">
+                <label>名称 <input v-model="editForm.name" /></label>
+                <label>AccessKey ID <input v-model="editForm.accessKey" /></label>
+                <label>AccessKey Secret（留空则不修改） <input v-model="editForm.secretKey" type="password" /></label>
+                <div class="row">
+                  <button class="btn mini" @click="saveEdit(a)">保存</button>
+                  <button class="ghost mini" @click="editing = 0">取消</button>
+                </div>
+              </div>
+            </td>
             <td>{{ PROV[a.provider] || a.provider }}</td>
             <td class="mono">{{ a.accessKey }}</td>
             <td>{{ fmtTime(a.createdAt) }}</td>
             <td style="white-space:nowrap">
+              <button class="ghost mini" @click="startEdit(a)">编辑</button>
               <button class="ghost mini" :disabled="testing === a.id" @click="test(a)">
                 {{ testing === a.id ? '测试中…' : '测试' }}
               </button>

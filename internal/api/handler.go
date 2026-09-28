@@ -86,6 +86,7 @@ func (h *Handler) Routes() http.Handler {
 	// 云账号（用户添加的云提供商认证信息）及其目录查询。
 	authed.HandleFunc("GET /api/v1/cloud-accounts", h.listAccounts)
 	authed.HandleFunc("POST /api/v1/cloud-accounts", h.createAccount)
+	authed.HandleFunc("PATCH /api/v1/cloud-accounts/{id}", h.patchAccount)
 	authed.HandleFunc("DELETE /api/v1/cloud-accounts/{id}", h.deleteAccount)
 	authed.HandleFunc("POST /api/v1/cloud-accounts/{id}/test", h.testAccount)
 	authed.HandleFunc("GET /api/v1/cloud-accounts/{id}/regions", h.listAccountRegions)
