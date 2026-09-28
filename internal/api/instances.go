@@ -133,6 +133,7 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	h.audit(u.ID, "instance.create", fmt.Sprintf("id=%d account=%d(%s) provider=%s region=%s duration=%ds", inst.ID, account.ID, account.Name, inst.Provider, inst.Region, inst.DurationSec))
 	go h.applyInstance(runner, inst)
+	h.Hub.Broadcast(refreshEvent())
 	writeJSON(w, http.StatusAccepted, inst)
 }
 
@@ -182,6 +183,7 @@ func (h *Handler) applyInstance(runner Runner, inst *Instance) {
 	fresh.ExpiresAt = now.Add(time.Duration(fresh.DurationSec) * time.Second)
 	fresh.UpdatedAt = now
 	_ = h.Store.UpdateInstance(fresh)
+	h.Hub.Broadcast(refreshEvent())
 }
 
 func (h *Handler) markFailed(id int64, msg string) {
@@ -192,6 +194,7 @@ func (h *Handler) markFailed(id int64, msg string) {
 		_ = h.Store.UpdateInstance(inst)
 	}
 	h.audit(0, "instance.apply_failed", fmt.Sprintf("id=%d err=%s", id, msg))
+	h.Hub.Broadcast(refreshEvent())
 }
 
 func (h *Handler) listInstances(w http.ResponseWriter, r *http.Request) {
@@ -358,6 +361,7 @@ func (h *Handler) renewInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.audit(u.ID, "instance.renew", fmt.Sprintf("id=%d until=%s", inst.ID, newExpire.Format(time.RFC3339)))
+	h.Hub.Broadcast(refreshEvent())
 	writeJSON(w, http.StatusOK, inst)
 }
 
@@ -375,6 +379,7 @@ func (h *Handler) deleteInstance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.audit(u.ID, "instance.record.delete", fmt.Sprintf("id=%d", inst.ID))
+		h.Hub.Broadcast(refreshEvent())
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -391,6 +396,7 @@ func (h *Handler) deleteInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	h.audit(u.ID, "instance.destroy", fmt.Sprintf("id=%d", inst.ID))
 	go h.destroyInstance(inst.ID, inst.TfWorkspace)
+	h.Hub.Broadcast(refreshEvent())
 	w.WriteHeader(http.StatusAccepted)
 }
 
@@ -430,6 +436,7 @@ func (h *Handler) destroyInstance(id int64, workspace string) {
 		inst.UpdatedAt = now
 		_ = h.Store.UpdateInstance(inst)
 	}
+	h.Hub.Broadcast(refreshEvent())
 }
 
 func randHex(n int) string {

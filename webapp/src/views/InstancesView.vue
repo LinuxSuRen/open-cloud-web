@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
-import { api, arr, fmtDur, fmtTime, PROV_NAME, ST_NAME } from '../api'
+import { api, arr, fmtDur, fmtTime, PROV_NAME, ST_NAME, connectWS } from '../api'
 
 const instances = ref([])
 const accounts = ref([])
@@ -140,9 +140,17 @@ const now = ref(Date.now())
 onMounted(() => {
   load()
   loadAccounts()
-  timer = setInterval(() => { now.value = Date.now(); load() }, 15000)
+  now.value = Date.now()
+  // 服务端推送刷新（替代 15s 轮询）；断线自动重连，多次失败降级轮询。
+  timer = connectWS(
+    (ev) => {
+      now.value = Date.now()
+      if (ev.type === 'instances.updated') load()
+    },
+    () => load(), // fallback
+  )
 })
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => timer && timer())
 
 const left = (i) => Math.floor((new Date(i.expiresAt) - now.value) / 1000)
 const canRenew = (i) => i.status === 'running' && !i.renewedAt && left(i) > 0

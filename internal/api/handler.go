@@ -2,10 +2,13 @@
 package api
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,6 +33,7 @@ type Handler struct {
 	Feishu    *auth.FeishuOAuth
 	States    *auth.StateManager
 	NewRunner RunnerFactory // 按账号凭据构造 tofu Runner
+	Hub       *Hub          // WebSocket 推送
 	Cfg       Config
 	Log       *log.Logger
 
@@ -39,15 +43,18 @@ type Handler struct {
 // NewHandler 构造 Handler；now 仅测试注入用，生产留空即 time.Now。
 // cfg.SecretKey 用于云账号 Secret 的 AES 加密；为空时应由装配层传 JWTSecret。
 func NewHandler(store Store, mgr auth.Manager, feishu *auth.FeishuOAuth, states *auth.StateManager, newRunner RunnerFactory, cfg Config) *Handler {
-	return &Handler{
+	h := &Handler{
 		Store:     store,
 		Auth:      mgr,
 		Feishu:    feishu,
 		States:    states,
 		NewRunner: newRunner,
+		Hub:       NewHub(15 * time.Second), // 周期兜底推送（覆盖调度器侧变更）
 		Cfg:       cfg,
 		Log:       log.Default(),
 	}
+	go h.Hub.Run(make(chan struct{}))
+	return h
 }
 
 func (h *Handler) t() time.Time {
@@ -70,6 +77,7 @@ func (h *Handler) Routes() http.Handler {
 	public.HandleFunc("GET /api/v1/auth/feishu/callback", h.feishuCallback)
 	public.HandleFunc("POST /api/v1/auth/token", h.exchangeToken)
 	public.HandleFunc("POST /api/v1/auth/login", h.login)
+	public.HandleFunc("GET /api/v1/ws", h.handleWS)
 
 	// v1 认证端点。
 	authed := http.NewServeMux()
@@ -132,6 +140,15 @@ type statusRecorder struct {
 func (r *statusRecorder) WriteHeader(code int) {
 	r.status = code
 	r.ResponseWriter.WriteHeader(code)
+}
+
+// Hijack 透传给底层 ResponseWriter：WebSocket 升级（/api/v1/ws）依赖它。
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hj, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("response writer does not support hijack")
+	}
+	return hj.Hijack()
 }
 
 // requestIDLog 为每个请求生成 8 字节随机 hex requestID 并记录访问日志。
