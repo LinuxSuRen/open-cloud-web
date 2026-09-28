@@ -10,16 +10,37 @@ const form = reactive({
 })
 const catalog = reactive({ regions: [], zones: [], images: [], types: [], loading: '' })
 const busy = ref(false)
-const filter = ref('active') // active(默认,非终态) | all | 具体状态
+const filter = ref('active') // active(默认=创建中+运行中) | all | 具体状态
+const page = ref(1)
+const pageSize = 20
+const total = ref(0)
+const pages = ref(0)
 let timer = null
 
 async function load() {
   try {
-    instances.value = arr(await api('GET', `/api/v1/instances?status=${filter.value}`))
+    const d = await api('GET', `/api/v1/instances?status=${filter.value}&page=${page.value}&limit=${pageSize}`)
+    instances.value = arr(d.instances)
+    total.value = d.total ?? 0
+    pages.value = d.pages ?? 0
   } catch { /* 401 已全局处理 */ }
 }
 
-watch(filter, load)
+watch(filter, () => { page.value = 1; load() })
+
+function goPage(p) {
+  if (p < 1 || (pages.value && p > pages.value)) return
+  page.value = p
+  load()
+}
+
+function pageList() {
+  const out = []
+  const start = Math.max(1, page.value - 3)
+  const end = Math.min(pages.value, start + 6)
+  for (let i = start; i <= end; i++) out.push(i)
+  return out
+}
 
 async function removeRecord(id) {
   if (!confirm('确认删除该已销毁的记录？仅清理数据库记录，不影响云资源。')) return
@@ -187,9 +208,9 @@ const accountName = (id) => accounts.value.find((a) => a.id === id)?.name || `#$
 
     <div class="card">
       <h2>
-        我的云主机
+        我的云主机 <span class="hint" style="margin-left:4px">共 {{ total }} 条</span>
         <select v-model="filter" style="margin-left:8px;font-size:12px;padding:3px 8px">
-          <option value="active">有效（默认）</option>
+          <option value="active">有效（创建中+运行中，默认）</option>
           <option value="all">全部</option>
           <option value="creating">创建中</option>
           <option value="running">运行中</option>
@@ -244,6 +265,17 @@ const accountName = (id) => accounts.value.find((a) => a.id === id)?.name || `#$
           </tr>
         </tbody>
       </table>
+      <div v-if="pages > 1" class="pager">
+        <button class="ghost mini" :disabled="page <= 1" @click="goPage(page - 1)">‹ 上一页</button>
+        <button v-for="p in pageList()" :key="p" class="ghost mini" :class="{ cur: p === page }" @click="goPage(p)">{{ p }}</button>
+        <button class="ghost mini" :disabled="page >= pages" @click="goPage(page + 1)">下一页 ›</button>
+        <span class="hint" style="margin-left:8px">{{ page }} / {{ pages }} 页</span>
+      </div>
     </div>
   </section>
 </template>
+
+<style scoped>
+.pager { margin-top: 14px; display: flex; align-items: center; gap: 6px; }
+.pager .cur { color: var(--pri); font-weight: 700; border-color: var(--pri); }
+</style>

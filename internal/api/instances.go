@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strconv"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -218,7 +219,45 @@ func (h *Handler) listInstances(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, filterInstances(insts, r.URL.Query().Get("status")))
+	filtered := filterInstances(insts, r.URL.Query().Get("status"))
+	writeJSON(w, http.StatusOK, paginateInstances(filtered, r))
+}
+
+// paginateInstances 内存分页（单用户实例量小；admin 聚合视图同路径复用）。
+// 返回 {instances,total,page,pageSize,pages}，默认每页 20、上限 100。
+func paginateInstances(in []*Instance, r *http.Request) map[string]any {
+	q := r.URL.Query()
+	limit, err := strconv.Atoi(q.Get("limit"))
+	if err != nil || limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	page, err := strconv.Atoi(q.Get("page"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+	total := len(in)
+	pages := (total + limit - 1) / limit
+	if page > pages && pages > 0 {
+		page = pages
+	}
+	start := (page - 1) * limit
+	if start > total {
+		start = total
+	}
+	end := start + limit
+	if end > total {
+		end = total
+	}
+	if in == nil {
+		in = []*Instance{}
+	}
+	return map[string]any{
+		"instances": in[start:end], "total": total,
+		"page": page, "pageSize": limit, "pages": pages,
+	}
 }
 
 // filterInstances 按状态过滤：""或"active"只留非终态（创建中/运行中/销毁中），
@@ -226,9 +265,10 @@ func (h *Handler) listInstances(w http.ResponseWriter, r *http.Request) {
 func filterInstances(in []*Instance, status string) []*Instance {
 	switch status {
 	case "", "active":
+		// “有效” = 创建中 + 运行中（销毁中不算）。
 		out := make([]*Instance, 0, len(in))
 		for _, i := range in {
-			if i.Status == StatusCreating || i.Status == StatusRunning || i.Status == StatusDestroying {
+			if i.Status == StatusCreating || i.Status == StatusRunning {
 				out = append(out, i)
 			}
 		}
