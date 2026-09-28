@@ -48,7 +48,8 @@ resource "volcengine_security_group_rule" "ingress" {
   for_each          = toset(["22", "80", "443"])
   security_group_id = volcengine_security_group.this.id
   protocol          = "TCP"
-  port              = each.value
+  port_start        = each.value
+  port_end          = each.value
   source_cidr_ip    = "0.0.0.0/0"
   direction         = "ingress"
 }

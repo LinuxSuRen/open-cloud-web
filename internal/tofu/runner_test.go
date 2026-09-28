@@ -32,8 +32,10 @@ case "$1" in
         exit 1
         ;;
       hang-apply)
-        sleep 30
-        exit 1
+        # 内置忙等（不派生子进程）：ctx 取消时 CommandContext 杀掉 sh
+        # 即结束；若用 sleep，被杀的 sh 会留下持有 stdout 管道的 sleep
+        # 子进程，导致 Wait 阻塞到 sleep 自然退出。
+        while :; do :; done
         ;;
     esac
     echo '{"@level":"info","type":"change_summary","changes":{"create":3,"update":0,"delete":0,"no-op":0}}'

@@ -43,20 +43,17 @@ jobs:
           key: tofu-plugins-${{ runner.os }}-${{ hashFiles('internal/tofu/templates/**/*.tf') }}
       - name: tofu fmt check
         run: tofu fmt -recursive -check internal/tofu/templates
-      - name: init & validate (alicloud)
-        working-directory: internal/tofu/templates/alicloud
-        env:
-          TF_PLUGIN_CACHE_DIR: ~/.cache/tofu-plugin-cache
+      - name: init & validate
         run: |
-          tofu init -backend=false -input=false -no-color
-          tofu validate -no-color
-      - name: init & validate (volcengine)
-        working-directory: internal/tofu/templates/volcengine
-        env:
-          TF_PLUGIN_CACHE_DIR: ~/.cache/tofu-plugin-cache
-        run: |
-          tofu init -backend=false -input=false -no-color
-          tofu validate -no-color
+          # ~ 不会被 tofu 展开，须用 $HOME 并先建目录
+          export TF_PLUGIN_CACHE_DIR="$HOME/.cache/tofu-plugin-cache"
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+          for t in alicloud volcengine; do
+            echo "== $t =="
+            (cd "internal/tofu/templates/$t" \
+              && tofu init -backend=false -input=false -no-color \
+              && tofu validate -no-color)
+          done
 
   web:
     name: Vue build (embedded dist up to date)
