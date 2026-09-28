@@ -195,6 +195,7 @@ func (h *Handler) markFailed(id int64, msg string) {
 
 func (h *Handler) listInstances(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
+	var insts []*Instance
 	if u.Role == auth.RoleAdmin {
 		// admin 可看全部：借助 ListUsers 遍历（store 子集无 ListAllInstances）。
 		users, err := h.Store.ListUsers()
@@ -202,24 +203,50 @@ func (h *Handler) listInstances(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "failed to list instances")
 			return
 		}
-		var all []*Instance
 		for _, su := range users {
-			insts, err := h.Store.ListInstancesByUser(su.ID)
+			mine, err := h.Store.ListInstancesByUser(su.ID)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, "failed to list instances")
 				return
 			}
-			all = append(all, insts...)
+			insts = append(insts, mine...)
 		}
-		writeJSON(w, http.StatusOK, all)
-		return
+	} else {
+		var err error
+		if insts, err = h.Store.ListInstancesByUser(u.ID); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list instances")
+			return
+		}
 	}
-	insts, err := h.Store.ListInstancesByUser(u.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list instances")
-		return
+	writeJSON(w, http.StatusOK, filterInstances(insts, r.URL.Query().Get("status")))
+}
+
+// filterInstances 按状态过滤：""或"active"只留非终态（创建中/运行中/销毁中），
+// "all" 全量，其余值按精确状态匹配（creating/running/destroying/destroyed/failed）。
+func filterInstances(in []*Instance, status string) []*Instance {
+	switch status {
+	case "", "active":
+		out := make([]*Instance, 0, len(in))
+		for _, i := range in {
+			if i.Status == StatusCreating || i.Status == StatusRunning || i.Status == StatusDestroying {
+				out = append(out, i)
+			}
+		}
+		return out
+	case "all":
+		if in == nil {
+			return []*Instance{}
+		}
+		return in
+	default:
+		out := make([]*Instance, 0, len(in))
+		for _, i := range in {
+			if string(i.Status) == status {
+				out = append(out, i)
+			}
+		}
+		return out
 	}
-	writeJSON(w, http.StatusOK, insts)
 }
 
 // loadOwnedInstance 加载实例并校验所有权（admin 放行）。
@@ -300,11 +327,21 @@ func (h *Handler) deleteInstance(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	u := auth.UserFromContext(r.Context())
+	// 已销毁的终态记录：直接删除记录（云资源已回收，无需再调 tofu）。
+	if inst.Status == StatusDestroyed {
+		if err := h.Store.DeleteInstance(inst.ID); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to delete record")
+			return
+		}
+		h.audit(u.ID, "instance.record.delete", fmt.Sprintf("id=%d", inst.ID))
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if inst.Status != StatusRunning && inst.Status != StatusFailed {
 		writeError(w, http.StatusBadRequest, "only running or failed instances can be destroyed")
 		return
 	}
-	u := auth.UserFromContext(r.Context())
 	now := h.t()
 	inst.Status = StatusDestroying
 	inst.UpdatedAt = now

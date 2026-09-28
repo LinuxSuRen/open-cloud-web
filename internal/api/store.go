@@ -29,6 +29,7 @@ type Store interface {
 	GetInstance(id int64) (*Instance, error)
 	ListInstancesByUser(userID int64) ([]*Instance, error)
 	UpdateInstance(*Instance) error
+	DeleteInstance(id int64) error
 	// cloud account（用户添加的云提供商认证信息）
 	CreateCloudAccount(*model.CloudAccount) error
 	GetCloudAccount(id int64) (*model.CloudAccount, error)

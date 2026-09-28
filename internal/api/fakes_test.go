@@ -201,6 +201,16 @@ func (s *fakeStore) UpdateInstance(i *Instance) error {
 	return nil
 }
 
+func (s *fakeStore) DeleteInstance(id int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.instances[id]; !ok {
+		return auth.ErrNotFound
+	}
+	delete(s.instances, id)
+	return nil
+}
+
 func (s *fakeStore) CreateAuditLog(a *AuditLog) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { api, arr, fmtDur, fmtTime, PROV_NAME, ST_NAME } from '../api'
 
 const instances = ref([])
@@ -10,12 +10,23 @@ const form = reactive({
 })
 const catalog = reactive({ regions: [], zones: [], images: [], types: [], loading: '' })
 const busy = ref(false)
+const filter = ref('active') // active(默认,非终态) | all | 具体状态
 let timer = null
 
 async function load() {
   try {
-    instances.value = arr(await api('GET', '/api/v1/instances'))
+    instances.value = arr(await api('GET', `/api/v1/instances?status=${filter.value}`))
   } catch { /* 401 已全局处理 */ }
+}
+
+watch(filter, load)
+
+async function removeRecord(id) {
+  if (!confirm('确认删除该已销毁的记录？仅清理数据库记录，不影响云资源。')) return
+  try {
+    await api('DELETE', `/api/v1/instances/${id}`)
+    await load()
+  } catch (e) { alert('删除失败：' + e.message) }
 }
 
 async function loadAccounts() {
@@ -175,7 +186,19 @@ const accountName = (id) => accounts.value.find((a) => a.id === id)?.name || `#$
     </div>
 
     <div class="card">
-      <h2>我的云主机 <button class="ghost mini" style="margin-left:8px" @click="load">刷新</button></h2>
+      <h2>
+        我的云主机
+        <select v-model="filter" style="margin-left:8px;font-size:12px;padding:3px 8px">
+          <option value="active">有效（默认）</option>
+          <option value="all">全部</option>
+          <option value="creating">创建中</option>
+          <option value="running">运行中</option>
+          <option value="destroying">销毁中</option>
+          <option value="destroyed">已销毁</option>
+          <option value="failed">失败</option>
+        </select>
+        <button class="ghost mini" style="margin-left:8px" @click="load">刷新</button>
+      </h2>
       <table>
         <thead>
           <tr>
@@ -214,6 +237,9 @@ const accountName = (id) => accounts.value.find((a) => a.id === id)?.name || `#$
               <button
                 v-if="i.status === 'running' || i.status === 'failed'"
                 class="ghost mini danger" @click="destroy(i.id)">销毁</button>
+              <button
+                v-if="i.status === 'destroyed'"
+                class="ghost mini" @click="removeRecord(i.id)">删除记录</button>
             </td>
           </tr>
         </tbody>

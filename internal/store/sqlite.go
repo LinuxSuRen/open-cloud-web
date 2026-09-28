@@ -657,3 +657,12 @@ func (s *SQLiteStore) CountAuditLogs() (int64, error) {
 	}
 	return n, nil
 }
+
+// DeleteInstance 删除实例记录（仅用于已销毁的终态记录清理）。
+func (s *SQLiteStore) DeleteInstance(id int64) error {
+	res, err := s.db.Exec(`DELETE FROM instances WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("store: delete instance %d: %w", id, err)
+	}
+	return ensureAffected(res, "delete instance", id)
+}
