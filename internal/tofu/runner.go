@@ -418,7 +418,7 @@ func clip(s string, n int) string {
 
 // Preload 仅执行模板准备与 `tofu init`：把 provider 插件下载进共享缓存，
 // 不创建任何云资源（用于控制台预下载与状态展示）。
-func (r *runner) Preload(ctx context.Context, provider string) error {
+func (r *runner) Preload(ctx context.Context, provider string, progress io.Writer) error {
 	if provider != "alicloud" && provider != "volcengine" {
 		return fmt.Errorf("tofu: unknown provider %q", provider)
 	}
@@ -432,7 +432,7 @@ func (r *runner) Preload(ctx context.Context, provider string) error {
 		return err
 	}
 	env := r.env(provider) // init 不调云 API，凭证为空无影响
-	if err := r.run(ctx, wsDir, env, nil, "init", "-input=false", "-no-color"); err != nil {
+	if err := r.run(ctx, wsDir, env, progress, "init", "-input=false", "-no-color"); err != nil {
 		return fmt.Errorf("tofu init: %w", err)
 	}
 	return nil

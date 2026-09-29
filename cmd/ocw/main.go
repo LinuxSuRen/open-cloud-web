@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os/signal"
@@ -120,10 +121,10 @@ func run() error {
 		},
 	)
 	// provider 预下载：init 不调云 API，用空凭据的 runner 即可。
-	handler.PreloadProvider = func(ctx context.Context, provider string) error {
+	handler.PreloadProvider = func(ctx context.Context, provider string, w io.Writer) error {
 		return newRunner(provider, "", "").(interface {
-			Preload(ctx context.Context, provider string) error
-		}).Preload(ctx, provider)
+			Preload(ctx context.Context, provider string, progress io.Writer) error
+		}).Preload(ctx, provider, w)
 	}
 
 	srv := &http.Server{Addr: cfg.ListenAddr, Handler: handler.Routes()}

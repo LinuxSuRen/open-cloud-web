@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -34,9 +35,10 @@ type Handler struct {
 	Auth            auth.Manager
 	Feishu          *auth.FeishuOAuth
 	States          *auth.StateManager
-	NewRunner       RunnerFactory                                    // 按账号凭据构造 tofu Runner
-	PreloadProvider func(ctx context.Context, provider string) error // 预下载 provider 插件
-	Hub             *Hub                                             // WebSocket 推送
+	NewRunner       RunnerFactory                                                 // 按账号凭据构造 tofu Runner
+	PreloadProvider func(ctx context.Context, provider string, w io.Writer) error // 预下载 provider 插件
+	Preloads        *PreloadMonitor                                               // 下载任务状态/日志
+	Hub             *Hub                                                          // WebSocket 推送
 	Cfg             Config
 	Log             *log.Logger
 
@@ -53,6 +55,7 @@ func NewHandler(store Store, mgr auth.Manager, feishu *auth.FeishuOAuth, states 
 		States:    states,
 		NewRunner: newRunner,
 		Hub:       NewHub(15 * time.Second), // 周期兜底推送（覆盖调度器侧变更）
+		Preloads:  NewPreloadMonitor(),
 		Cfg:       cfg,
 		Log:       log.Default(),
 	}

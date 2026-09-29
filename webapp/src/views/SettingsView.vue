@@ -4,8 +4,10 @@ import { api, arr, fmtTime } from '../api'
 
 const form = reactive({ tofuProxyURL: '', cloudProxyURL: '' })
 const providers = ref([])
+const jobs = ref({})
 const loading = ref(false)
 const preloading = ref('')
+let pollTimer = null
 
 function fmtSize(n) {
   if (n >= 1 << 30) return (n / (1 << 30)).toFixed(2) + ' GB'
@@ -18,20 +20,40 @@ async function loadProviders() {
   try {
     const d = await api('GET', '/api/v1/admin/providers')
     providers.value = arr(d.providers)
+    jobs.value = d.jobs || {}
+    schedulePoll()
   } finally {
     loading.value = false
   }
 }
 
+// 有下载任务在跑时每 2s 轮询日志
+function schedulePoll() {
+  const running = Object.values(jobs.value).some((j) => j.status === 'running')
+  if (running && !pollTimer) {
+    pollTimer = setInterval(async () => {
+      try {
+        const d = await api('GET', '/api/v1/admin/providers')
+        providers.value = arr(d.providers)
+        jobs.value = d.jobs || {}
+        if (!Object.values(jobs.value).some((j) => j.status === 'running')) {
+          clearInterval(pollTimer)
+          pollTimer = null
+        }
+      } catch { /* 下轮重试 */ }
+    }, 2000)
+  } else if (!running && pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
 async function preload(provider) {
-  preloading.value = provider
   try {
-    const d = await api('POST', '/api/v1/admin/providers/preload', { provider })
-    providers.value = arr(d.providers)
+    await api('POST', '/api/v1/admin/providers/preload', { provider })
+    loadProviders() // 立即开始轮询日志
   } catch (e) {
-    alert('下载失败：' + e.message)
-  } finally {
-    preloading.value = ''
+    alert('启动下载失败：' + e.message)
   }
 }
 const saved = ref(false)
@@ -115,6 +137,20 @@ async function save() {
         </tbody>
       </table>
       <p class="hint">预下载/创建时下载走「Provider 下载代理」设置；init 不需要云凭据。下载完成的 provider 全局共享，后续创建不再重复下载。</p>
+
+      <div v-for="(job, name) in jobs" :key="name" style="margin-top:14px">
+        <h3 style="font-size:13px;margin-bottom:6px">
+          {{ { alicloud: '阿里云', volcengine: '火山引擎' }[name] || name }} 下载任务
+          <span class="tag" :class="job.status === 'running' ? 't-creating' : job.status === 'success' ? 't-running' : 't-failed'">
+            {{ { running: '下载中…', success: '成功', failed: '失败' }[job.status] || job.status }}
+          </span>
+          <span style="color:var(--sub);font-size:12px;margin-left:8px">
+            {{ fmtTime(job.startedAt) }}{{ job.endedAt ? ' → ' + fmtTime(job.endedAt) : '' }}
+          </span>
+        </h3>
+        <pre class="mono" style="background:#0f172a;color:#e2e8f0;padding:12px;border-radius:8px;max-height:220px;overflow:auto;white-space:pre-wrap">{{ job.log || '（等待输出…）' }}</pre>
+        <p v-if="job.error" style="color:var(--err);font-size:12px;margin-top:4px">{{ job.error }}</p>
+      </div>
     </div>
   </section>
 </template>
