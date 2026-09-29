@@ -3,6 +3,7 @@ package api
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -24,18 +25,20 @@ type Config struct {
 	MaxDurationSec     int64  // 全局单次时长上限（<=0 表示不限制）
 	CORSAllowedOrigin  string // 允许的 CORS origin，"*" 或具体 origin；空则不发 CORS 头
 	SecretKey          string // 云账号 Secret 的 AES 加密密钥（空则回落 JWTSecret）
+	DataDir            string // 数据目录（扫描 provider 插件缓存用）
 }
 
 // Handler 是 REST API 的根处理器。
 type Handler struct {
-	Store     Store
-	Auth      auth.Manager
-	Feishu    *auth.FeishuOAuth
-	States    *auth.StateManager
-	NewRunner RunnerFactory // 按账号凭据构造 tofu Runner
-	Hub       *Hub          // WebSocket 推送
-	Cfg       Config
-	Log       *log.Logger
+	Store           Store
+	Auth            auth.Manager
+	Feishu          *auth.FeishuOAuth
+	States          *auth.StateManager
+	NewRunner       RunnerFactory                                    // 按账号凭据构造 tofu Runner
+	PreloadProvider func(ctx context.Context, provider string) error // 预下载 provider 插件
+	Hub             *Hub                                             // WebSocket 推送
+	Cfg             Config
+	Log             *log.Logger
 
 	now func() time.Time
 }
@@ -112,6 +115,8 @@ func (h *Handler) Routes() http.Handler {
 	admin.HandleFunc("GET /api/v1/admin/audit-logs", h.listAuditLogs)
 	admin.HandleFunc("GET /api/v1/admin/settings", h.getSettings)
 	admin.HandleFunc("PUT /api/v1/admin/settings", h.putSettings)
+	admin.HandleFunc("GET /api/v1/admin/providers", h.listProviders)
+	admin.HandleFunc("POST /api/v1/admin/providers/preload", h.preloadProvider)
 	public.Handle("/api/v1/users", h.requireAuthWrapper()(requireAdmin(admin)))
 	public.Handle("/api/v1/users/", h.requireAuthWrapper()(requireAdmin(admin)))
 	public.Handle("/api/v1/admin/", h.requireAuthWrapper()(requireAdmin(admin)))

@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Runner 管理每个实例的 OpenTofu 工作目录（跨包契约，签名必须与
@@ -413,4 +414,103 @@ func clip(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…(截断)"
+}
+
+// Preload 仅执行模板准备与 `tofu init`：把 provider 插件下载进共享缓存，
+// 不创建任何云资源（用于控制台预下载与状态展示）。
+func (r *runner) Preload(ctx context.Context, provider string) error {
+	if provider != "alicloud" && provider != "volcengine" {
+		return fmt.Errorf("tofu: unknown provider %q", provider)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, err := r.pluginCacheDir(); err != nil {
+		return err
+	}
+	wsDir := r.workspaceDir("preload-" + provider)
+	if err := ensureWorkspace(wsDir, provider, r.cfg.Templates); err != nil {
+		return err
+	}
+	env := r.env(provider) // init 不调云 API，凭证为空无影响
+	if err := r.run(ctx, wsDir, env, nil, "init", "-input=false", "-no-color"); err != nil {
+		return fmt.Errorf("tofu init: %w", err)
+	}
+	return nil
+}
+
+// CachedProvider 描述插件缓存里的一个 provider 二进制。
+type CachedProvider struct {
+	Namespace string    `json:"namespace"` // 如 volcengine
+	Name      string    `json:"name"`      // 如 volcengine
+	Version   string    `json:"version"`   // 如 0.0.196
+	Platform  string    `json:"platform"`  // 如 darwin_amd64
+	Size      int64     `json:"size"`      // 字节
+	ModTime   time.Time `json:"modTime"`   // 下载完成时间
+}
+
+// ListCachedProviders 扫描插件缓存目录（DataDir/plugin-cache），返回已
+// 下载的 provider 列表。目录层级：
+// registry.opentofu.org/<ns>/<name>/<version>/<os_arch>/<binary>
+func ListCachedProviders(dataDir string) []CachedProvider {
+	root := filepath.Join(dataDir, "plugin-cache", "registry.opentofu.org")
+	out := []CachedProvider{}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return out
+	}
+	for _, ns := range entries {
+		if !ns.IsDir() {
+			continue
+		}
+		names, err := os.ReadDir(filepath.Join(root, ns.Name()))
+		if err != nil {
+			continue
+		}
+		for _, name := range names {
+			if !name.IsDir() {
+				continue
+			}
+			versions, err := os.ReadDir(filepath.Join(root, ns.Name(), name.Name()))
+			if err != nil {
+				continue
+			}
+			for _, ver := range versions {
+				if !ver.IsDir() {
+					continue
+				}
+				platforms, err := os.ReadDir(filepath.Join(root, ns.Name(), name.Name(), ver.Name()))
+				if err != nil {
+					continue
+				}
+				for _, plat := range platforms {
+					pdir := filepath.Join(root, ns.Name(), name.Name(), ver.Name(), plat.Name())
+					if !plat.IsDir() {
+						continue
+					}
+					files, err := os.ReadDir(pdir)
+					if err != nil {
+						continue
+					}
+					for _, f := range files {
+						if f.IsDir() {
+							continue
+						}
+						// 只统计 provider 主二进制，排除 LICENSE/README/锁文件。
+						if !strings.HasPrefix(f.Name(), "terraform-provider-") {
+							continue
+						}
+						info, err := f.Info()
+						if err != nil {
+							continue
+						}
+						out = append(out, CachedProvider{
+							Namespace: ns.Name(), Name: name.Name(), Version: ver.Name(),
+							Platform: plat.Name(), Size: info.Size(), ModTime: info.ModTime(),
+						})
+					}
+				}
+			}
+		}
+	}
+	return out
 }

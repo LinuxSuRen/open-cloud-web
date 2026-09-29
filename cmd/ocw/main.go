@@ -116,8 +116,15 @@ func run() error {
 			MaxDurationSec:     cfg.MaxDurationSec,
 			CORSAllowedOrigin:  cfg.CORSAllowedOrigin,
 			SecretKey:          secretKey,
+			DataDir:            cfg.DataDir,
 		},
 	)
+	// provider 预下载：init 不调云 API，用空凭据的 runner 即可。
+	handler.PreloadProvider = func(ctx context.Context, provider string) error {
+		return newRunner(provider, "", "").(interface {
+			Preload(ctx context.Context, provider string) error
+		}).Preload(ctx, provider)
+	}
 
 	srv := &http.Server{Addr: cfg.ListenAddr, Handler: handler.Routes()}
 
