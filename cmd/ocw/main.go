@@ -299,21 +299,37 @@ func seedSecurityGroups(st store.Store) {
 		return
 	}
 	presets := []struct {
-		name   string
-		ports  []int
-		remark string
+		name     string
+		ports    []int
+		udpPorts []int
+		remark   string
 	}{
-		{"仅 SSH", []int{22}, "默认：仅开放 SSH"},
-		{"Web 服务", []int{22, 80, 443}, "SSH + HTTP/HTTPS"},
-		{"MQTT 服务", []int{22, 1883, 8883}, "SSH + MQTT/MQTTS"},
-		{"常用测试", []int{22, 80, 443, 1883, 3306, 6379, 8080}, "SSH/Web/MQTT/MySQL/Redis/8080"},
+		{"仅 SSH", []int{22}, nil, "默认：仅开放 SSH"},
+		{"Web 服务", []int{22, 80, 443}, nil, "SSH + HTTP/HTTPS"},
+		{"MQTT 服务", []int{22, 1883, 8883}, nil, "SSH + MQTT/MQTTS"},
+		{"常用测试", []int{22, 80, 443, 1883, 3306, 6379, 8080}, nil, "SSH/Web/MQTT/MySQL/Redis/8080"},
+		{"MediaMTX 流媒体", []int{22, 1935, 8554, 8888, 8889}, []int{8189, 8890},
+			"RTMP 1935 / RTSP 8554 / HLS 8888 / WebRTC 8889 + WebRTC ICE 8189(UDP) / SRT 8890(UDP)"},
 	}
+	existing, _ := st.ListSecurityGroups(0)
+	have := map[string]bool{}
+	for _, g := range existing {
+		have[g.Name] = true
+	}
+	n := 0
 	for _, p := range presets {
+		if have[p.name] {
+			continue
+		}
 		if err := st.CreateSecurityGroup(&model.SecurityGroup{
-			UserID: 0, Name: p.name, Ports: p.ports, Remark: p.remark,
+			UserID: 0, Name: p.name, Ports: p.ports, UDPPorts: p.udpPorts, Remark: p.remark,
 		}); err != nil {
 			log.Printf("[ocw] seed security group %q: %v", p.name, err)
+			continue
 		}
+		n++
 	}
-	log.Printf("[ocw] seeded %d preset security groups", len(presets))
+	if n > 0 {
+		log.Printf("[ocw] seeded %d preset security groups", n)
+	}
 }

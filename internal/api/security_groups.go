@@ -19,6 +19,15 @@ var CommonPorts = []struct {
 	{22, "SSH"}, {80, "HTTP"}, {443, "HTTPS"}, {1883, "MQTT"}, {8883, "MQTTS"},
 	{3306, "MySQL"}, {5432, "PostgreSQL"}, {6379, "Redis"},
 	{8080, "HTTP 备用"}, {27017, "MongoDB"}, {9092, "Kafka"}, {15672, "RabbitMQ 管控台"},
+	{1935, "RTMP"}, {8554, "RTSP"}, {8888, "HLS"}, {8889, "WebRTC(HTTP)"},
+}
+
+// CommonUDPPorts 常见 UDP 端口目录。
+var CommonUDPPorts = []struct {
+	Port int    `json:"port"`
+	Name string `json:"name"`
+}{
+	{8189, "WebRTC ICE"}, {8890, "SRT"}, {8000, "RTP"}, {8001, "RTCP"}, {161, "SNMP"},
 }
 
 // GET /api/v1/security-groups：全局预置 + 自己创建的；附常见端口目录。
@@ -33,14 +42,15 @@ func (h *Handler) listSecurityGroups(w http.ResponseWriter, r *http.Request) {
 		groups = []*model.SecurityGroup{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"groups": groups, "commonPorts": CommonPorts,
+		"groups": groups, "commonPorts": CommonPorts, "commonUdpPorts": CommonUDPPorts,
 	})
 }
 
 type createSGReq struct {
-	Name   string `json:"name"`
-	Ports  []int  `json:"ports"`
-	Remark string `json:"remark"`
+	Name     string `json:"name"`
+	Ports    []int  `json:"ports"`
+	UDPPorts []int  `json:"udpPorts"`
+	Remark   string `json:"remark"`
 }
 
 // POST /api/v1/security-groups：创建自己的端口集合。
@@ -54,22 +64,33 @@ func (h *Handler) createSecurityGroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name must be 1-64 chars")
 		return
 	}
-	if len(req.Ports) == 0 || len(req.Ports) > 32 {
-		writeError(w, http.StatusBadRequest, "ports must have 1-32 entries")
+	if (len(req.Ports) == 0 && len(req.UDPPorts) == 0) ||
+		len(req.Ports) > 32 || len(req.UDPPorts) > 32 {
+		writeError(w, http.StatusBadRequest, "ports/udpPorts must have 1-32 entries (at least one)")
 		return
 	}
-	seen := map[int]bool{}
-	ports := make([]int, 0, len(req.Ports))
-	for _, p := range req.Ports {
-		if p < 1 || p > 65535 || seen[p] {
+	norm := func(in []int) []int {
+		seen := map[int]bool{}
+		out := make([]int, 0, len(in))
+		for _, p := range in {
+			if !seen[p] {
+				seen[p] = true
+				out = append(out, p)
+			}
+		}
+		sort.Ints(out)
+		return out
+	}
+	for _, p := range append(append([]int(nil), req.Ports...), req.UDPPorts...) {
+		if p < 1 || p > 65535 {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid port %d", p))
 			return
 		}
-		seen[p] = true
-		ports = append(ports, p)
 	}
-	sort.Ints(ports)
-	g := &model.SecurityGroup{UserID: u.ID, Name: req.Name, Ports: ports, Remark: req.Remark}
+	g := &model.SecurityGroup{
+		UserID: u.ID, Name: req.Name,
+		Ports: norm(req.Ports), UDPPorts: norm(req.UDPPorts), Remark: req.Remark,
+	}
 	if err := h.Store.CreateSecurityGroup(g); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create security group")
 		return

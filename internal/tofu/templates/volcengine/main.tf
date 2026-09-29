@@ -90,3 +90,14 @@ output "password" {
   value     = var.password
   sensitive = true
 }
+
+resource "volcengine_security_group_rule" "ingress_udp" {
+  # UDP 端口集合（如 WebRTC ICE 8189 / SRT 8890）；为空时不创建任何规则。
+  for_each          = toset(compact(split(",", var.udp_ports)))
+  security_group_id = volcengine_security_group.this.id
+  protocol          = "udp"
+  port_start        = tonumber(each.value)
+  port_end          = tonumber(each.value)
+  cidr_ip           = "0.0.0.0/0"
+  direction         = "ingress"
+}

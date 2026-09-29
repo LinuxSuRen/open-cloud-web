@@ -79,3 +79,13 @@ output "password" {
   value     = var.password
   sensitive = true
 }
+
+resource "alicloud_security_group_rule" "ingress_udp" {
+  # UDP 端口集合（如 WebRTC ICE 8189 / SRT 8890）；为空时不创建任何规则。
+  for_each          = toset(compact(split(",", var.udp_ports)))
+  type              = "ingress"
+  ip_protocol       = "udp"
+  port_range        = "${each.value}/${each.value}"
+  security_group_id = alicloud_security_group.this.id
+  cidr_ip           = "0.0.0.0/0"
+}

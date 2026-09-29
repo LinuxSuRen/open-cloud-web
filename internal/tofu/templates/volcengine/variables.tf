@@ -84,3 +84,9 @@ variable "ingress_ports" {
   type        = string
   default     = "22,80,443"
 }
+
+variable "udp_ports" {
+  description = "安全组放行的 UDP 入方向端口（逗号分隔，可为空）"
+  type        = string
+  default     = ""
+}

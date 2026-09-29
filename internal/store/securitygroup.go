@@ -9,12 +9,12 @@ import (
 	"github.com/linuxsuren/open-cloud-web/internal/model"
 )
 
-const sgCols = `id, user_id, name, ports, remark, created_at, updated_at`
+const sgCols = `id, user_id, name, ports, udp_ports, remark, created_at, updated_at`
 
 func scanSG(row interface{ Scan(...any) error }) (*model.SecurityGroup, error) {
 	var g model.SecurityGroup
-	var ports, createdAt, updatedAt string
-	err := row.Scan(&g.ID, &g.UserID, &g.Name, &ports, &g.Remark, &createdAt, &updatedAt)
+	var ports, udpPorts, createdAt, updatedAt string
+	err := row.Scan(&g.ID, &g.UserID, &g.Name, &ports, &udpPorts, &g.Remark, &createdAt, &updatedAt)
 	if errorsIs(err) {
 		return nil, ErrNotFound
 	}
@@ -30,6 +30,15 @@ func scanSG(row interface{ Scan(...any) error }) (*model.SecurityGroup, error) {
 			g.Ports = append(g.Ports, n)
 		}
 	}
+	for _, p := range strings.Split(udpPorts, ",") {
+		if p == "" {
+			continue
+		}
+		var n int
+		if _, err := fmt.Sscanf(strings.TrimSpace(p), "%d", &n); err == nil {
+			g.UDPPorts = append(g.UDPPorts, n)
+		}
+	}
 	if g.CreatedAt, err = parseTime(createdAt); err != nil {
 		return nil, err
 	}
@@ -40,7 +49,7 @@ func scanSG(row interface{ Scan(...any) error }) (*model.SecurityGroup, error) {
 }
 
 func (s *SQLiteStore) CreateSecurityGroup(g *model.SecurityGroup) error {
-	if g == nil || g.Name == "" || len(g.Ports) == 0 {
+	if g == nil || g.Name == "" || (len(g.Ports) == 0 && len(g.UDPPorts) == 0) {
 		return fmt.Errorf("store: CreateSecurityGroup: name and ports required")
 	}
 	now := time.Now().UTC()
@@ -52,10 +61,14 @@ func (s *SQLiteStore) CreateSecurityGroup(g *model.SecurityGroup) error {
 	for _, p := range g.Ports {
 		ps = append(ps, fmt.Sprint(p))
 	}
+	var us []string
+	for _, p := range g.UDPPorts {
+		us = append(us, fmt.Sprint(p))
+	}
 	res, err := s.db.Exec(
-		`INSERT INTO security_groups (user_id, name, ports, remark, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		g.UserID, g.Name, strings.Join(ps, ","), g.Remark,
+		`INSERT INTO security_groups (user_id, name, ports, udp_ports, remark, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		g.UserID, g.Name, strings.Join(ps, ","), strings.Join(us, ","), g.Remark,
 		fmtTime(g.CreatedAt), fmtTime(g.UpdatedAt))
 	if err != nil {
 		return fmt.Errorf("store: create security group %q: %w", g.Name, err)

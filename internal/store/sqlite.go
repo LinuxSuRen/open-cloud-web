@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS security_groups (
     user_id     INTEGER NOT NULL DEFAULT 0, -- 0=全局预置
     name        TEXT    NOT NULL,
     ports       TEXT    NOT NULL,           -- 逗号分隔 TCP 端口
+    udp_ports   TEXT    NOT NULL DEFAULT '', -- 逗号分隔 UDP 端口
     remark      TEXT    NOT NULL DEFAULT '',
     created_at  TEXT    NOT NULL,
     updated_at  TEXT    NOT NULL
@@ -158,6 +159,7 @@ var migrations = []struct{ table, column, ddl string }{
 	{"instances", "password_enc", "ALTER TABLE instances ADD COLUMN password_enc TEXT NOT NULL DEFAULT ''"},
 	{"users", "max_renew_times", "ALTER TABLE users ADD COLUMN max_renew_times INTEGER NOT NULL DEFAULT 0"},
 	{"instances", "renewed_times", "ALTER TABLE instances ADD COLUMN renewed_times INTEGER NOT NULL DEFAULT 0"},
+	{"security_groups", "udp_ports", "ALTER TABLE security_groups ADD COLUMN udp_ports TEXT NOT NULL DEFAULT ''"},
 }
 
 func (s *SQLiteStore) migrate() error {

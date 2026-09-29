@@ -4,16 +4,24 @@ import { api, arr, fmtTime } from '../api'
 
 const groups = ref([])
 const commonPorts = ref([])
+const commonUdpPorts = ref([])
 const busy = ref(false)
-const form = reactive({ name: '', ports: [], custom: '' })
+const form = reactive({ name: '', ports: [], custom: '', udpPorts: [], udpCustom: '' })
 
 async function load() {
   const d = await api('GET', '/api/v1/security-groups')
   groups.value = arr(d.groups)
   commonPorts.value = arr(d.commonPorts)
+  commonUdpPorts.value = arr(d.commonUdpPorts)
 }
 
 onMounted(load)
+
+function toggleUdpPort(p) {
+  const i = form.udpPorts.indexOf(p)
+  if (i >= 0) form.udpPorts.splice(i, 1)
+  else form.udpPorts.push(p)
+}
 
 function togglePort(p) {
   const i = form.ports.indexOf(p)
@@ -25,21 +33,31 @@ function parseCustom() {
   return form.custom
     .split(/[,，\s]+/)
     .map((s) => parseInt(s, 10))
+.filter((n) => n >= 1 && n <= 65535)
+}
+
+function parseUdpCustom() {
+  return form.udpCustom
+    .split(/[,\s]+/)
+    .map((x) => parseInt(x, 10))
     .filter((n) => n >= 1 && n <= 65535)
 }
 
 async function create() {
   const ports = [...new Set([...form.ports, ...parseCustom()])]
-  if (!form.name.trim() || ports.length === 0) {
-    alert('请填写名称并至少选择一个端口')
+  const udpPorts = [...new Set([...form.udpPorts, ...parseUdpCustom()])]
+  if (!form.name.trim() || (ports.length === 0 && udpPorts.length === 0)) {
+    alert('请填写名称并至少选择一个端口（TCP 或 UDP）')
     return
   }
   busy.value = true
   try {
-    await api('POST', '/api/v1/security-groups', { name: form.name.trim(), ports })
+    await api('POST', '/api/v1/security-groups', { name: form.name.trim(), ports, udpPorts })
     form.name = ''
     form.ports = []
     form.custom = ''
+    form.udpPorts = []
+    form.udpCustom = ''
     await load()
   } catch (e) {
     alert('创建失败：' + e.message)
@@ -56,9 +74,12 @@ async function remove(g) {
   } catch (e) { alert(e.message) }
 }
 
-function portNames(ports) {
-  const m = Object.fromEntries(commonPorts.value.map((p) => [p.port, p.name]))
-  return ports.map((p) => `${p}${m[p] ? '(' + m[p] + ')' : ''}`).join('、')
+function portNames(ports, udpPorts = []) {
+  const m = Object.fromEntries([...commonPorts.value, ...commonUdpPorts.value].map((p) => [p.port, p.name]))
+  const parts = []
+  if (ports.length) parts.push('TCP: ' + ports.map((p) => `${p}${m[p] ? '(' + m[p] + ')' : ''}`).join('、'))
+  if (udpPorts.length) parts.push('UDP: ' + udpPorts.map((p) => `${p}${m[p] ? '(' + m[p] + ')' : ''}`).join('、'))
+  return parts.join('　')
 }
 </script>
 
@@ -78,8 +99,21 @@ function portNames(ports) {
             @click="togglePort(p.port)"
           >{{ p.port }} {{ p.name }}</span>
         </div>
-        <label>自定义端口（逗号/空格分隔，可多选叠加）
+        <div>
+          <span style="font-size:12px;color:var(--sub)">常见 UDP 端口（流媒体/监控常用）：</span>
+          <span
+            v-for="p in commonUdpPorts"
+            :key="'u'+p.port"
+            class="port-chip"
+            :class="{ on: form.udpPorts.includes(p.port) }"
+            @click="toggleUdpPort(p.port)"
+          >{{ p.port }} {{ p.name }}</span>
+        </div>
+        <label>自定义 TCP 端口（逗号/空格分隔，可多选叠加）
           <input v-model="form.custom" placeholder="如：9000, 9092" style="width:260px" />
+        </label>
+        <label>自定义 UDP 端口
+          <input v-model="form.udpCustom" placeholder="如：8189, 8890" style="width:260px" />
         </label>
         <div class="row">
           <button class="btn" :disabled="busy" @click="create">{{ busy ? '创建中…' : '创建' }}</button>
@@ -94,7 +128,7 @@ function portNames(ports) {
           <tr v-if="!groups.length"><td colspan="5" class="empty">暂无安全组</td></tr>
           <tr v-for="g in groups" :key="g.id">
             <td><b>{{ g.name }}</b><br /><span v-if="g.remark" style="color:var(--sub);font-size:12px">{{ g.remark }}</span></td>
-            <td class="mono" style="white-space:normal;max-width:420px">{{ portNames(g.ports) }}</td>
+            <td class="mono" style="white-space:normal;max-width:480px">{{ portNames(g.ports, g.udpPorts) }}</td>
             <td>{{ g.userID === 0 ? '预置' : '自建' }}</td>
             <td>{{ fmtTime(g.createdAt) }}</td>
             <td><button class="ghost mini danger" @click="remove(g)">删除</button></td>

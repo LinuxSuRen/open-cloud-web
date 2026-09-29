@@ -239,6 +239,7 @@ func (h *Handler) applyInstance(runner Runner, inst *Instance, sg *model.Securit
 		"instance_name":    inst.Name,
 		"public_bandwidth": "5",
 		"ingress_ports":    portsJoin(sg.Ports),
+		"udp_ports":        portsJoin(sg.UDPPorts),
 		"password":         h.instPassword(inst),
 	}
 	done := make(chan error, 1)

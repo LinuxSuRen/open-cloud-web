@@ -9,7 +9,8 @@ type SecurityGroup struct {
 	ID        int64     `json:"id"`
 	UserID    int64     `json:"userID"`
 	Name      string    `json:"name"`
-	Ports     []int     `json:"ports"` // 开放的 TCP 入方向端口
+	Ports     []int     `json:"ports"`    // 开放的 TCP 入方向端口
+	UDPPorts  []int     `json:"udpPorts"` // 开放的 UDP 入方向端口
 	Remark    string    `json:"remark,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`

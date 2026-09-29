@@ -269,7 +269,7 @@ const accountName = (id) => accounts.value.find((a) => a.id === id)?.name || `#$
         </label>
         <label>安全组
           <select v-model="form.securityGroupID" style="max-width:220px">
-            <option v-for="g in sgs" :key="g.id" :value="g.id">{{ g.name }}（{{ g.ports.join('/') }}）</option>
+            <option v-for="g in sgs" :key="g.id" :value="g.id">{{ g.name }}（{{ g.ports.join('/') }}{{ g.udpPorts && g.udpPorts.length ? ' UDP:' + g.udpPorts.join('/') : '' }}）</option>
           </select>
         </label>
         <label>SSH 密码（留空自动生成）
