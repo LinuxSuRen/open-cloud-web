@@ -383,7 +383,7 @@ func (f *fakeRunner) OutputIP(ctx context.Context, ws string) (string, string, e
 
 // fakeRunnerFactory 按账号凭据返回 fake runner（记录凭据供断言）。
 func fakeRunnerFactory(runner *fakeRunner) RunnerFactory {
-	return func(provider, ak, sk string) Runner { return runner }
+	return func(provider, ak, sk string, onLog func(string)) Runner { return runner }
 }
 
 // newTestServer 组装完整 API（内存 store + fake tofu/cloud）。

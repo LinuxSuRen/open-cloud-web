@@ -228,6 +228,10 @@ func (h *Handler) accountProvider(w http.ResponseWriter, r *http.Request) (cloud
 // runnerForAccount 按账号 ID 解密凭据并构造 tofu Runner（无归属校验，
 // 供销毁等系统侧路径使用；用户侧入口用 accountRunner）。
 func (h *Handler) runnerForAccount(accountID int64) (Runner, *model.CloudAccount, error) {
+	return h.runnerForAccountLog(accountID, nil)
+}
+
+func (h *Handler) runnerForAccountLog(accountID int64, onLog func(string)) (Runner, *model.CloudAccount, error) {
 	a, err := h.Store.GetCloudAccount(accountID)
 	if err != nil {
 		return nil, nil, err
@@ -236,12 +240,21 @@ func (h *Handler) runnerForAccount(accountID int64) (Runner, *model.CloudAccount
 	if err != nil {
 		return nil, nil, err
 	}
-	return h.NewRunner(a.Provider, a.AccessKey, secret), a, nil
+	runner := h.NewRunner(a.Provider, a.AccessKey, secret, nil)
+		if onLog != nil {
+			// 有日志回调时重建带回调的 runner（销毁路径暂不需要过程日志）。
+			runner = h.NewRunner(a.Provider, a.AccessKey, secret, onLog)
+		}
+		return runner, a, nil
 }
 
 // loadAccountRunner 为实例创建构造 Runner（含归属校验）。
 func (h *Handler) accountRunner(u *auth.User, accountID int64) (Runner, *model.CloudAccount, error) {
-	runner, a, err := h.runnerForAccount(accountID)
+	return h.accountRunnerLog(u, accountID, nil)
+}
+
+func (h *Handler) accountRunnerLog(u *auth.User, accountID int64, onLog func(string)) (Runner, *model.CloudAccount, error) {
+	runner, a, err := h.runnerForAccountLog(accountID, onLog)
 	if err != nil {
 		return nil, nil, err
 	}

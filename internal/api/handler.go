@@ -38,6 +38,7 @@ type Handler struct {
 	NewRunner       RunnerFactory                                                 // 按账号凭据构造 tofu Runner
 	PreloadProvider func(ctx context.Context, provider string, w io.Writer) error // 预下载 provider 插件
 	Preloads        *PreloadMonitor                                               // 下载任务状态/日志
+	ILogs           *instanceLogHub                                               // 实例创建过程日志
 	Hub             *Hub                                                          // WebSocket 推送
 	Cfg             Config
 	Log             *log.Logger
@@ -56,6 +57,7 @@ func NewHandler(store Store, mgr auth.Manager, feishu *auth.FeishuOAuth, states 
 		NewRunner: newRunner,
 		Hub:       NewHub(15 * time.Second), // 周期兜底推送（覆盖调度器侧变更）
 		Preloads:  NewPreloadMonitor(),
+		ILogs:     newInstanceLogHub(),
 		Cfg:       cfg,
 		Log:       log.Default(),
 	}
@@ -96,6 +98,7 @@ func (h *Handler) Routes() http.Handler {
 	authed.HandleFunc("GET /api/v1/instances/{id}", h.getInstance)
 	authed.HandleFunc("POST /api/v1/instances/{id}/renew", h.renewInstance)
 	authed.HandleFunc("DELETE /api/v1/instances/{id}", h.deleteInstance)
+	authed.HandleFunc("GET /api/v1/instances/{id}/logs", h.instanceLogs)
 
 	// 云账号（用户添加的云提供商认证信息）及其目录查询。
 	authed.HandleFunc("GET /api/v1/cloud-accounts", h.listAccounts)

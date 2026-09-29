@@ -64,7 +64,12 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "cloudAccountID is required (add a cloud account first)")
 		return
 	}
-	runner, account, err := h.accountRunner(u, req.CloudAccountID)
+	var instRef *Instance // 闭包按引用捕获，CreateInstance 后即有值
+	runner, account, err := h.accountRunnerLog(u, req.CloudAccountID, func(line string) {
+		if instRef != nil {
+			h.ILogs.Append(instRef.ID, line)
+		}
+	})
 	if err != nil {
 		if errors.Is(err, errForbiddenAccount) {
 			writeError(w, http.StatusForbidden, err.Error())
@@ -131,6 +136,8 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to create instance record")
 		return
 	}
+	instRef = inst
+	h.ILogs.Append(inst.ID, "创建请求受理，开始准备 OpenTofu 工作区（provider 未缓存时先下载）…")
 	h.audit(u.ID, "instance.create", fmt.Sprintf("id=%d account=%d(%s) provider=%s region=%s duration=%ds", inst.ID, account.ID, account.Name, inst.Provider, inst.Region, inst.DurationSec))
 	go h.applyInstance(runner, inst)
 	h.Hub.Broadcast(refreshEvent())
@@ -160,11 +167,14 @@ func (h *Handler) applyInstance(runner Runner, inst *Instance) {
 		applyErr = ctx.Err()
 	}
 	if applyErr != nil {
+		h.ILogs.Append(inst.ID, "apply 失败: "+applyErr.Error())
 		h.markFailed(inst.ID, "apply failed: "+applyErr.Error())
 		return
 	}
+	h.ILogs.Append(inst.ID, "apply 完成，读取公网/私网 IP…")
 	publicIP, privateIP, err := runner.OutputIP(ctx, inst.TfWorkspace)
 	if err != nil {
+		h.ILogs.Append(inst.ID, "读取 IP 失败: "+err.Error())
 		h.markFailed(inst.ID, "output ip failed: "+err.Error())
 		return
 	}

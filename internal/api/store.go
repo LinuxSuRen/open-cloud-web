@@ -53,6 +53,6 @@ type Runner interface {
 	OutputIP(ctx context.Context, workspace string) (public, private string, err error)
 }
 
-// RunnerFactory 按云提供商与账号凭据构造 tofu Runner。
+// RunnerFactory 按云提供商、账号凭据与可选过程日志回调构造 tofu Runner。
 // 由装配层注入（包一层 internal/tofu.NewRunner），测试可注入 fake。
-type RunnerFactory func(provider, accessKey, secretKey string) Runner
+type RunnerFactory func(provider, accessKey, secretKey string, onLog func(string)) Runner

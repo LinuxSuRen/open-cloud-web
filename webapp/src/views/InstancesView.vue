@@ -145,6 +145,34 @@ async function destroy(id) {
 }
 
 const now = ref(Date.now())
+const logInst = ref(0) // 正在查看日志的实例 ID
+const logText = ref('')
+let logTimer = null
+
+async function showLog(id) {
+  logInst.value = id
+  logText.value = ''
+  await refreshLog()
+  if (logTimer) clearInterval(logTimer)
+  logTimer = setInterval(refreshLog, 2000)
+}
+
+async function refreshLog() {
+  if (!logInst.value) return
+  try {
+    const d = await api('GET', `/api/v1/instances/${logInst.value}/logs`)
+    logText.value = d.log || '（暂无输出，等待 OpenTofu 启动…）'
+    if (d.status !== 'creating') {
+      clearInterval(logTimer)
+      logTimer = null
+    }
+  } catch { /* 下轮重试 */ }
+}
+
+function closeLog() {
+  logInst.value = 0
+  if (logTimer) { clearInterval(logTimer); logTimer = null }
+}
 onMounted(() => {
   load()
   loadAccounts()
@@ -158,7 +186,7 @@ onMounted(() => {
     () => load(), // fallback
   )
 })
-onUnmounted(() => timer && timer())
+onUnmounted(() => { if (timer) timer(); closeLog() })
 
 const left = (i) => Math.floor((new Date(i.expiresAt) - now.value) / 1000)
 const canRenew = (i) => i.status === 'running' && !i.renewedAt && left(i) > 0
@@ -283,12 +311,22 @@ const accountName = (id) => accounts.value.find((a) => a.id === id)?.name || `#$
                 v-if="i.status === 'creating'"
                 class="ghost mini danger" @click="cancelCreate(i.id)">取消</button>
               <button
+                v-if="i.status === 'creating' || i.status === 'failed' || i.status === 'running'"
+                class="ghost mini" @click="showLog(i.id)">日志</button>
+              <button
                 v-if="i.status === 'destroyed'"
                 class="ghost mini" @click="removeRecord(i.id)">删除记录</button>
             </td>
           </tr>
         </tbody>
       </table>
+      <div v-if="logInst" class="card" style="border-color:var(--pri)">
+        <h2>
+          实例 #{{ logInst }} 过程日志
+          <button class="ghost mini" style="margin-left:8px" @click="closeLog">关闭</button>
+        </h2>
+        <pre class="mono" style="background:#0f172a;color:#e2e8f0;padding:12px;border-radius:8px;max-height:300px;overflow:auto;white-space:pre-wrap">{{ logText }}</pre>
+      </div>
       <div v-if="pages > 1" class="pager">
         <button class="ghost mini" :disabled="page <= 1" @click="goPage(page - 1)">‹ 上一页</button>
         <button v-for="p in pageList()" :key="p" class="ghost mini" :class="{ cur: p === page }" @click="goPage(p)">{{ p }}</button>

@@ -72,6 +72,8 @@ type Config struct {
 	// Templates 可选模板文件系统（按 provider 子目录组织），
 	// 默认使用包内 embed 的 templates 目录；测试可注入内存 FS。
 	Templates fs.FS
+	// OnLog 可选：apply 过程事件回调（人类可读行，供控制台展示创建过程）。
+	OnLog func(line string)
 	// ExtraEnv 追加到 tofu 进程的额外环境变量（如代理：
 	// HTTPS_PROXY=...；registry.opentofu.org 通常直连更快，可配合
 	// NO_PROXY 精细分流，仅让 GitHub 下载走代理）。
@@ -341,6 +343,12 @@ func (r *runner) apply(ctx context.Context, wsDir string, env []string) error {
 		var msg struct {
 			Level      string `json:"@level"`
 			Type       string `json:"type"`
+			Hook       *struct {
+				Resource *struct {
+					Addr string `json:"addr"`
+				} `json:"resource"`
+				Action *string `json:"action"`
+			} `json:"hook"`
 			Diagnostic *struct {
 				Severity string `json:"severity"`
 				Summary  string `json:"summary"`
@@ -363,6 +371,36 @@ func (r *runner) apply(ctx context.Context, wsDir string, env []string) error {
 		}
 		if msg.Type == "change_summary" && msg.Changes != nil && r.cfg.OnProgress != nil {
 			r.cfg.OnProgress(*msg.Changes)
+		}
+		// 创建过程事件 → 可读日志行（供控制台实时展示）。
+		if r.cfg.OnLog != nil {
+			switch msg.Type {
+			case "apply_start":
+				if msg.Hook != nil && msg.Hook.Resource != nil {
+					r.cfg.OnLog("开始应用: " + msg.Hook.Resource.Addr)
+				}
+			case "apply_progress":
+				if msg.Hook != nil && msg.Hook.Resource != nil {
+					r.cfg.OnLog("进行中: " + msg.Hook.Resource.Addr)
+				}
+			case "apply_complete":
+				if msg.Hook != nil && msg.Hook.Resource != nil {
+					r.cfg.OnLog("完成: " + msg.Hook.Resource.Addr)
+				}
+			case "diagnostic":
+				if msg.Diagnostic != nil {
+					d := msg.Diagnostic.Severity + ": " + msg.Diagnostic.Summary
+					if msg.Diagnostic.Detail != "" {
+						d += " — " + msg.Diagnostic.Detail
+					}
+					r.cfg.OnLog(d)
+				}
+			case "change_summary":
+				if msg.Changes != nil {
+					r.cfg.OnLog(fmt.Sprintf("变更汇总: 新建 %d / 更新 %d / 删除 %d",
+						msg.Changes.Create, msg.Changes.Update, msg.Changes.Delete))
+				}
+			}
 		}
 	}
 	if err := cmd.Wait(); err != nil {
