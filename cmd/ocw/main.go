@@ -31,6 +31,13 @@ import (
 	"github.com/linuxsuren/open-cloud-web/internal/tofu"
 )
 
+// 版本信息：发布构建经 -ldflags 注入（见 .github/workflows/release.yml）。
+var (
+	version   = "dev"
+	commit    = "none"
+	buildDate = "unknown"
+)
+
 func main() {
 	if err := run(); err != nil {
 		log.Fatalf("ocw: %v", err)
@@ -43,6 +50,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	log.Printf("[ocw] version=%s commit=%s buildDate=%s", version, commit, buildDate)
 	if cfg.JWTSecretGenerated {
 		log.Printf("[ocw] warning: OCW_JWT_SECRET 未设置，已生成临时随机值（重启后登录会话失效；生产环境请显式设置）")
 		// 零配置开发模式：同时给 admin 引导口令一个默认值，否则无任何登录途径。
