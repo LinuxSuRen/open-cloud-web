@@ -41,6 +41,14 @@ func (h *Handler) listSecurityGroups(w http.ResponseWriter, r *http.Request) {
 	if groups == nil {
 		groups = []*model.SecurityGroup{}
 	}
+	for _, g := range groups {
+		if g.UDPPorts == nil {
+			g.UDPPorts = []int{}
+		}
+		if g.Ports == nil {
+			g.Ports = []int{}
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"groups": groups, "commonPorts": CommonPorts, "commonUdpPorts": CommonUDPPorts,
 	})

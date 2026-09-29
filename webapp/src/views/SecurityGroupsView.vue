@@ -74,7 +74,9 @@ async function remove(g) {
   } catch (e) { alert(e.message) }
 }
 
-function portNames(ports, udpPorts = []) {
+function portNames(rawPorts, rawUdpPorts) {
+  const ports = rawPorts || []
+  const udpPorts = rawUdpPorts || []
   const m = Object.fromEntries([...commonPorts.value, ...commonUdpPorts.value].map((p) => [p.port, p.name]))
   const parts = []
   if (ports.length) parts.push('TCP: ' + ports.map((p) => `${p}${m[p] ? '(' + m[p] + ')' : ''}`).join('、'))
