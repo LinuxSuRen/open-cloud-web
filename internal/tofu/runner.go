@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -138,10 +139,62 @@ func (r *runner) Apply(ctx context.Context, workspace string, vars map[string]st
 	env := r.env(provider)
 	// tofu init：禁用交互输入，插件缓存指向 DataDir/plugin-cache，
 	// 避免每次 workspace 都重新下载 provider。
-	if err := r.run(ctx, wsDir, env, nil, "init", "-input=false", "-no-color"); err != nil {
+	// 注意：TF_PLUGIN_CACHE_DIR 只跳过二进制下载，init 仍会联网到
+	// registry 做 checksums 签名校验（依赖 GitHub，弱网下必超时）。
+	// 因此当缓存里已有该 provider 的二进制时，改用 -plugin-dir 完全
+	// 离线安装（不访问 registry）。
+	initArgs := []string{"init", "-input=false", "-no-color"}
+	if r.pluginCacheHas(provider) {
+		if dir, err := r.pluginCacheDir(); err == nil {
+			initArgs = append(initArgs, "-plugin-dir="+dir)
+			// -plugin-dir 与 TF_PLUGIN_CACHE_DIR 互斥：同时设置时 tofu
+			// 会尝试把 provider “安装回缓存自身”而失败，须剔除该变量。
+			env = envWithout(env, "TF_PLUGIN_CACHE_DIR")
+		}
+	}
+	if err := r.run(ctx, wsDir, env, nil, initArgs...); err != nil {
 		return fmt.Errorf("tofu init: %w", err)
 	}
 	return r.apply(ctx, wsDir, env)
+}
+
+// providerRegistryNS 把平台 provider 名映射为 registry 命名空间/名称。
+func providerRegistryNS(provider string) (string, string, bool) {
+	switch provider {
+	case "alicloud":
+		return "aliyun", "alicloud", true
+	case "volcengine":
+		return "volcengine", "volcengine", true
+	}
+	return "", "", false
+}
+
+// pluginCacheHas 判断插件缓存中是否已有该 provider 当前平台的二进制
+// （任一版本，配合模板的 >= 约束可离线安装）。
+func (r *runner) pluginCacheHas(provider string) bool {
+	ns, name, ok := providerRegistryNS(provider)
+	if !ok {
+		return false
+	}
+	plat := runtime.GOOS + "_" + runtime.GOARCH
+	root := filepath.Join(r.pluginCacheDirPath(), "registry.opentofu.org", ns, name)
+	versions, err := os.ReadDir(root)
+	if err != nil {
+		return false
+	}
+	for _, v := range versions {
+		dir := filepath.Join(root, v.Name(), plat)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), "terraform-provider-") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (r *runner) Destroy(ctx context.Context, workspace string) error {
@@ -549,6 +602,18 @@ func ListCachedProviders(dataDir string) []CachedProvider {
 				}
 			}
 		}
+	}
+	return out
+}
+
+// envWithout 从环境变量切片中剔除指定键（返回新切片）。
+func envWithout(env []string, key string) []string {
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		if strings.HasPrefix(e, key+"=") {
+			continue
+		}
+		out = append(out, e)
 	}
 	return out
 }
