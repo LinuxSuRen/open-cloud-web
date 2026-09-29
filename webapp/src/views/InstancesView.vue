@@ -128,6 +128,14 @@ async function renew(id) {
   } catch (e) { alert('续用失败：' + e.message) }
 }
 
+async function cancelCreate(id) {
+  if (!confirm('确认取消创建？已开始创建的云资源会在 apply 结束后自动回收。')) return
+  try {
+    await api('DELETE', `/api/v1/instances/${id}`)
+    await load()
+  } catch (e) { alert('取消失败：' + e.message) }
+}
+
 async function destroy(id) {
   if (!confirm('确认销毁该云主机？')) return
   try {
@@ -271,6 +279,9 @@ const accountName = (id) => accounts.value.find((a) => a.id === id)?.name || `#$
               <button
                 v-if="i.status === 'running' || i.status === 'failed'"
                 class="ghost mini danger" @click="destroy(i.id)">销毁</button>
+              <button
+                v-if="i.status === 'creating'"
+                class="ghost mini danger" @click="cancelCreate(i.id)">取消</button>
               <button
                 v-if="i.status === 'destroyed'"
                 class="ghost mini" @click="removeRecord(i.id)">删除记录</button>

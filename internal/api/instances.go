@@ -383,8 +383,13 @@ func (h *Handler) deleteInstance(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if inst.Status != StatusRunning && inst.Status != StatusFailed {
-		writeError(w, http.StatusBadRequest, "only running or failed instances can be destroyed")
+	if inst.Status == StatusCreating {
+		// 取消创建：置 Destroying；tofu runner 内部有互斥锁，销毁会
+		// 排队等待在途 apply 完成后回收已建出的资源（不会泄漏）。
+		h.audit(u.ID, "instance.cancel_create", fmt.Sprintf("id=%d", inst.ID))
+	}
+	if inst.Status != StatusRunning && inst.Status != StatusFailed && inst.Status != StatusCreating {
+		writeError(w, http.StatusBadRequest, "only creating/running/failed instances can be destroyed")
 		return
 	}
 	now := h.t()
