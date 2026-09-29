@@ -223,8 +223,6 @@ func (h *Handler) accountProvider(w http.ResponseWriter, r *http.Request) (cloud
 		}
 	}
 	return p, true
-	writeError(w, http.StatusBadRequest, "unknown provider: "+a.Provider)
-	return nil, false
 }
 
 // runnerForAccount 按账号 ID 解密凭据并构造 tofu Runner（无归属校验，
