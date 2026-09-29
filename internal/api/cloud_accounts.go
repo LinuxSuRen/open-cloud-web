@@ -216,7 +216,7 @@ func (h *Handler) accountProvider(w http.ResponseWriter, r *http.Request) (cloud
 		return nil, false
 	}
 	// 应用系统级 HTTP 代理设置（admin 可在控制台配置）。
-	if proxy, _ := h.Store.GetSetting(SettingProxyKey); proxy != "" {
+	if proxy := h.cloudProxySetting(); proxy != "" {
 		if err := p.SetProxy(proxy); err != nil {
 			writeError(w, http.StatusInternalServerError, "invalid proxy setting: "+err.Error())
 			return nil, false

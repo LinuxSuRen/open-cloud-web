@@ -73,7 +73,7 @@ func run() error {
 	// registry.opentofu.org 固定直连（经代理常更慢），仅 GitHub 下载走代理。
 	newRunner := func(provider, ak, sk string) tofu.Runner {
 		var extra []string
-		if proxy, _ := st.GetSetting("http_proxy"); proxy != "" {
+		if proxy, _ := st.GetSetting("http_proxy_tofu"); proxy != "" {
 			extra = []string{
 				"HTTPS_PROXY=" + proxy,
 				"HTTP_PROXY=" + proxy,

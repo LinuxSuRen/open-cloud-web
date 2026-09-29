@@ -2,20 +2,25 @@
 import { ref, reactive, onMounted } from 'vue'
 import { api } from '../api'
 
-const form = reactive({ proxyURL: '' })
+const form = reactive({ tofuProxyURL: '', cloudProxyURL: '' })
 const saved = ref(false)
 const busy = ref(false)
 
 onMounted(async () => {
   const d = await api('GET', '/api/v1/admin/settings')
-  form.proxyURL = d.proxyURL || ''
+  form.tofuProxyURL = d.tofuProxyURL || ''
+  form.cloudProxyURL = d.cloudProxyURL || ''
 })
 
 async function save() {
   busy.value = true
   try {
-    const d = await api('PUT', '/api/v1/admin/settings', { proxyURL: form.proxyURL.trim() })
-    form.proxyURL = d.proxyURL
+    const d = await api('PUT', '/api/v1/admin/settings', {
+      tofuProxyURL: form.tofuProxyURL.trim(),
+      cloudProxyURL: form.cloudProxyURL.trim(),
+    })
+    form.tofuProxyURL = d.tofuProxyURL
+    form.cloudProxyURL = d.cloudProxyURL
     saved.value = true
     setTimeout(() => (saved.value = false), 2000)
   } catch (e) {
@@ -30,17 +35,23 @@ async function save() {
   <section>
     <div class="card">
       <h2>系统设置</h2>
-      <div class="row">
+      <div class="row" style="flex-direction:column;align-items:stretch;max-width:560px">
         <label>
-          HTTP 代理（云 API 调用与 provider 下载都走它）
-          <input v-model="form.proxyURL" placeholder="http://127.0.0.1:7890（留空不使用）" style="width:320px" />
+          Provider 下载代理（tofu init 下载 GitHub Releases 的 provider 二进制）
+          <input v-model="form.tofuProxyURL" placeholder="http://127.0.0.1:7890（留空=直连）" style="width:100%" />
         </label>
-        <button class="btn" :disabled="busy" @click="save">{{ busy ? '保存中…' : '保存' }}</button>
-        <span v-if="saved" style="color:var(--ok)">已保存 ✓</span>
+        <label>
+          云厂商 API 代理（阿里云/火山引擎的镜像查询、实例创建等 OpenAPI 调用）
+          <input v-model="form.cloudProxyURL" placeholder="http://127.0.0.1:7890（留空=直连）" style="width:100%" />
+        </label>
+        <div class="row">
+          <button class="btn" :disabled="busy" @click="save">{{ busy ? '保存中…' : '保存' }}</button>
+          <span v-if="saved" style="color:var(--ok)">已保存 ✓</span>
+        </div>
       </div>
       <p class="hint">
-        作用于：① 云厂商 API 调用（查询镜像/规格/创建实例）；② tofu 的 provider 下载
-        （GitHub Releases，registry.opentofu.org 固定直连避免变慢）。保存后立即生效，无需重启。
+        两条链路独立配置，按需只开其一。保存后立即生效，无需重启。
+        provider 下载固定对 registry.opentofu.org 直连（经代理通常更慢）；
         已下载的 provider 缓存在 data/plugin-cache，后续创建不再重复下载。
       </p>
     </div>
