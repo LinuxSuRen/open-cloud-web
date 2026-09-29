@@ -255,6 +255,7 @@ func TestInstanceLifecycle(t *testing.T) {
 	}
 	renewed := now
 	got.RenewedAt = &renewed
+	got.RenewedTimes = 2
 	got.ExpiresAt = now.Add(2 * time.Hour)
 	got.DurationSec = 7200
 	if err := s.UpdateInstance(got); err != nil {
@@ -264,8 +265,11 @@ func TestInstanceLifecycle(t *testing.T) {
 	if got.RenewedAt == nil || !got.RenewedAt.Equal(renewed) {
 		t.Errorf("renewed_at not persisted: %+v", got.RenewedAt)
 	}
-	if got.CanRenew(now) {
-		t.Error("already-renewed instance must not be renewable")
+	if got.RenewedTimes != 2 {
+		t.Errorf("renewed_times not persisted: %d", got.RenewedTimes)
+	}
+	if !got.CanRenew(now) {
+		t.Error("已续期实例仍具备基础续期条件（次数配额由 API 层判断）")
 	}
 	if got.CanRenew(got.ExpiresAt.Add(time.Second)) {
 		t.Error("expired instance must not be renewable")

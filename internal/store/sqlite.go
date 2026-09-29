@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS instances (
     status         TEXT    NOT NULL,
     expires_at     TEXT    NOT NULL,
     renewed_at     TEXT,
+    renewed_times  INTEGER NOT NULL DEFAULT 0,
     duration_sec   INTEGER NOT NULL DEFAULT 0,
     public_ip      TEXT    NOT NULL DEFAULT '',
     private_ip     TEXT    NOT NULL DEFAULT '',
@@ -144,6 +145,8 @@ var migrations = []struct{ table, column, ddl string }{
 	{"instances", "cloud_account_id", "ALTER TABLE instances ADD COLUMN cloud_account_id INTEGER NOT NULL DEFAULT 0"},
 	{"cloud_accounts", "session_enc", "ALTER TABLE cloud_accounts ADD COLUMN session_enc TEXT NOT NULL DEFAULT ''"},
 	{"instances", "password_enc", "ALTER TABLE instances ADD COLUMN password_enc TEXT NOT NULL DEFAULT ''"},
+	{"users", "max_renew_times", "ALTER TABLE users ADD COLUMN max_renew_times INTEGER NOT NULL DEFAULT 0"},
+	{"instances", "renewed_times", "ALTER TABLE instances ADD COLUMN renewed_times INTEGER NOT NULL DEFAULT 0"},
 }
 
 func (s *SQLiteStore) migrate() error {
@@ -206,10 +209,10 @@ func (s *SQLiteStore) CreateUser(u *model.User) error {
 	u.CreatedAt, u.UpdatedAt = u.CreatedAt.UTC(), u.UpdatedAt.UTC()
 
 	res, err := s.db.Exec(
-		`INSERT INTO users (username, display_name, email, role, status, provider, provider_sub, max_duration_sec, password_hash, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO users (username, display_name, email, role, status, provider, provider_sub, max_duration_sec, max_renew_times, password_hash, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		u.Username, u.DisplayName, u.Email, string(u.Role), string(u.Status),
-		u.Provider, u.ProviderSub, u.MaxDurationSec, u.PasswordHash, fmtTime(u.CreatedAt), fmtTime(u.UpdatedAt),
+		u.Provider, u.ProviderSub, u.MaxDurationSec, u.MaxRenewTimes, u.PasswordHash, fmtTime(u.CreatedAt), fmtTime(u.UpdatedAt),
 	)
 	if err != nil {
 		return fmt.Errorf("store: create user %q: %w", u.Username, err)
@@ -222,13 +225,13 @@ func (s *SQLiteStore) CreateUser(u *model.User) error {
 	return nil
 }
 
-const userCols = `id, username, display_name, email, role, status, provider, provider_sub, max_duration_sec, password_hash, created_at, updated_at`
+const userCols = `id, username, display_name, email, role, status, provider, provider_sub, max_duration_sec, max_renew_times, password_hash, created_at, updated_at`
 
 func scanUser(row interface{ Scan(...any) error }) (*model.User, error) {
 	var u model.User
 	var role, status, createdAt, updatedAt string
 	err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &role, &status,
-		&u.Provider, &u.ProviderSub, &u.MaxDurationSec, &u.PasswordHash, &createdAt, &updatedAt)
+		&u.Provider, &u.ProviderSub, &u.MaxDurationSec, &u.MaxRenewTimes, &u.PasswordHash, &createdAt, &updatedAt)
 	if errorsIs(err) {
 		return nil, ErrNotFound
 	}
@@ -292,9 +295,9 @@ func (s *SQLiteStore) UpdateUser(u *model.User) error {
 	}
 	u.UpdatedAt = time.Now().UTC()
 	res, err := s.db.Exec(
-		`UPDATE users SET username=?, display_name=?, email=?, role=?, status=?, provider=?, provider_sub=?, max_duration_sec=?, updated_at=? WHERE id=?`,
+		`UPDATE users SET username=?, display_name=?, email=?, role=?, status=?, provider=?, provider_sub=?, max_duration_sec=?, max_renew_times=?, updated_at=? WHERE id=?`,
 		u.Username, u.DisplayName, u.Email, string(u.Role), string(u.Status),
-		u.Provider, u.ProviderSub, u.MaxDurationSec, fmtTime(u.UpdatedAt), u.ID,
+		u.Provider, u.ProviderSub, u.MaxDurationSec, u.MaxRenewTimes, fmtTime(u.UpdatedAt), u.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("store: update user %d: %w", u.ID, err)
@@ -424,14 +427,14 @@ func (s *SQLiteStore) TouchPAT(id int64, usedAt time.Time) error {
 // ---------- instance ----------
 
 const instanceCols = `id, user_id, cloud_account_id, name, provider, region, zone, image_id, instance_type, status,
-expires_at, renewed_at, duration_sec, public_ip, private_ip, tf_workspace, password_enc, error_message, created_at, updated_at`
+expires_at, renewed_at, renewed_times, duration_sec, public_ip, private_ip, tf_workspace, password_enc, error_message, created_at, updated_at`
 
 func scanInstance(row interface{ Scan(...any) error }) (*model.Instance, error) {
 	var in model.Instance
 	var status, expiresAt, createdAt, updatedAt string
 	var renewedAt sql.NullString
 	err := row.Scan(&in.ID, &in.UserID, &in.CloudAccountID, &in.Name, &in.Provider, &in.Region, &in.Zone,
-		&in.ImageID, &in.InstanceType, &status, &expiresAt, &renewedAt, &in.DurationSec,
+		&in.ImageID, &in.InstanceType, &status, &expiresAt, &renewedAt, &in.RenewedTimes, &in.DurationSec,
 		&in.PublicIP, &in.PrivateIP, &in.TfWorkspace, &in.PasswordEnc, &in.ErrorMessage, &createdAt, &updatedAt)
 	if errorsIs(err) {
 		return nil, ErrNotFound
@@ -483,12 +486,13 @@ func (s *SQLiteStore) CreateInstance(in *model.Instance) error {
 	if in.RenewedAt != nil {
 		renewedAt = fmtTime(*in.RenewedAt)
 	}
+	_ = renewedAt
 	res, err := s.db.Exec(
 		`INSERT INTO instances (user_id, cloud_account_id, name, provider, region, zone, image_id, instance_type, status,
-			expires_at, renewed_at, duration_sec, public_ip, private_ip, tf_workspace, password_enc, error_message, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			expires_at, renewed_at, renewed_times, duration_sec, public_ip, private_ip, tf_workspace, password_enc, error_message, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		in.UserID, in.CloudAccountID, in.Name, in.Provider, in.Region, in.Zone, in.ImageID, in.InstanceType,
-		string(in.Status), fmtTime(in.ExpiresAt), renewedAt, in.DurationSec,
+		string(in.Status), fmtTime(in.ExpiresAt), renewedAt, in.RenewedTimes, in.DurationSec,
 		in.PublicIP, in.PrivateIP, in.TfWorkspace, in.PasswordEnc, in.ErrorMessage, fmtTime(in.CreatedAt), fmtTime(in.UpdatedAt),
 	)
 	if err != nil {
@@ -568,12 +572,13 @@ func (s *SQLiteStore) UpdateInstance(in *model.Instance) error {
 	if in.RenewedAt != nil {
 		renewedAt = fmtTime(*in.RenewedAt)
 	}
+	_ = renewedAt
 	res, err := s.db.Exec(
 		`UPDATE instances SET user_id=?, cloud_account_id=?, name=?, provider=?, region=?, zone=?, image_id=?, instance_type=?,
-		 status=?, expires_at=?, renewed_at=?, duration_sec=?, public_ip=?, private_ip=?, tf_workspace=?, password_enc=?,
+		 status=?, expires_at=?, renewed_at=?, renewed_times=?, duration_sec=?, public_ip=?, private_ip=?, tf_workspace=?, password_enc=?,
 		 error_message=?, updated_at=? WHERE id=?`,
 		in.UserID, in.CloudAccountID, in.Name, in.Provider, in.Region, in.Zone, in.ImageID, in.InstanceType,
-		string(in.Status), fmtTime(in.ExpiresAt), renewedAt, in.DurationSec,
+		string(in.Status), fmtTime(in.ExpiresAt), renewedAt, in.RenewedTimes, in.DurationSec,
 		in.PublicIP, in.PrivateIP, in.TfWorkspace, in.PasswordEnc, in.ErrorMessage, fmtTime(in.UpdatedAt), in.ID,
 	)
 	if err != nil {

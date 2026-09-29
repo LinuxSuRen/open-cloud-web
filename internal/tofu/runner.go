@@ -135,6 +135,11 @@ func (r *runner) Apply(ctx context.Context, workspace string, vars map[string]st
 	if err := writeTFVars(wsDir, vars); err != nil {
 		return err
 	}
+	// 记录 provider 元数据：tfvars 不含 provider 键（模板未声明），
+	// destroy/output 需要它来恢复云凭据。
+	if err := os.WriteFile(filepath.Join(wsDir, ".ocw-provider"), []byte(provider), 0o600); err != nil {
+		return err
+	}
 
 	env := r.env(provider)
 	// tofu init：禁用交互输入，插件缓存指向 DataDir/plugin-cache，
@@ -291,15 +296,23 @@ func (r *runner) pluginCacheDirPath() string {
 // detectProvider 从 workspace 已写入的 tfvars 里读回 provider，
 // 用于 destroy/output 时注入对应凭证。
 func (r *runner) detectProvider(wsDir string) string {
+	// 首选 Apply 写入的元数据文件；兼容旧 workspace 回落读 tfvars
+	// （旧 tfvars 全字符串，且 provider 键实际已被剔除，通常为空）。
+	if b, err := os.ReadFile(filepath.Join(wsDir, ".ocw-provider")); err == nil {
+		if p := strings.TrimSpace(string(b)); p != "" {
+			return p
+		}
+	}
 	data, err := os.ReadFile(filepath.Join(wsDir, "terraform.tfvars.json"))
 	if err != nil {
 		return ""
 	}
-	var vars map[string]string
+	var vars map[string]any
 	if json.Unmarshal(data, &vars) != nil {
 		return ""
 	}
-	return vars["provider"]
+	p, _ := vars["provider"].(string)
+	return p
 }
 
 // validWorkspace 防止 workspace 名逃逸目录（路径穿越）。

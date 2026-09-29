@@ -56,12 +56,11 @@ func CanTransition(from, to InstanceStatus) bool {
 	return allowed[to]
 }
 
-// CanRenew 报告实例当前是否允许续用：
-// 必须 Running、未续用过（RenewedAt == nil）且尚未过期。
+// CanRenew 报告实例当前是否具备续期基础条件：
+// 必须 Running 且尚未过期。次数配额（用户级/全局/admin 不限）由 API 层判断。
 func (i *Instance) CanRenew(now time.Time) bool {
 	return i != nil &&
 		i.Status == StatusRunning &&
-		i.RenewedAt == nil &&
 		now.Before(i.ExpiresAt)
 }
 
@@ -78,7 +77,8 @@ type Instance struct {
 	InstanceType   string         `json:"instanceType"`
 	Status         InstanceStatus `json:"status"` // StatusCreating | StatusRunning | StatusDestroying | StatusDestroyed | StatusFailed
 	ExpiresAt      time.Time      `json:"expiresAt"`
-	RenewedAt      *time.Time     `json:"renewedAt,omitempty"` // 非 nil 表示已续用一次（每个生命周期最多一次）
+	RenewedAt      *time.Time     `json:"renewedAt,omitempty"` // 最近一次续期时间
+	RenewedTimes   int64          `json:"renewedTimes"`        // 已续期次数
 	DurationSec    int64          `json:"durationSec"`         // 本次申请时长
 	PublicIP       string         `json:"publicIP"`
 	PrivateIP      string         `json:"privateIP"`

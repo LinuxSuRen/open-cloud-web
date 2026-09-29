@@ -22,6 +22,7 @@ type Config struct {
 	DataDir              string // 数据目录（sqlite + tofu workspaces）
 	DefaultDurationSec   int64  // 默认申请时长
 	MaxDurationSec       int64  // 全局单次时长上限
+	DefaultRenewTimes    int64  // 普通用户单实例默认可续期次数（admin 不受限；用户级配额可覆盖）
 	CreatingTimeoutSec   int64  // Creating 状态超时
 	SchedulerIntervalSec int64  // 调度器扫描间隔
 	FeishuClientID       string //
@@ -49,6 +50,7 @@ func Defaults() Config {
 		DataDir:              "data",
 		DefaultDurationSec:   3600,
 		MaxDurationSec:       86400,
+		DefaultRenewTimes:    3,
 		CreatingTimeoutSec:   900,
 		SchedulerIntervalSec: 30,
 	}
@@ -80,6 +82,9 @@ func Load() (Config, error) {
 		return cfg, err
 	}
 	if cfg.MaxDurationSec, err = getIntEnv("MAX_DURATION_SEC", cfg.MaxDurationSec); err != nil {
+		return cfg, err
+	}
+	if cfg.DefaultRenewTimes, err = getIntEnv("DEFAULT_RENEW_TIMES", cfg.DefaultRenewTimes); err != nil {
 		return cfg, err
 	}
 	if cfg.CreatingTimeoutSec, err = getIntEnv("CREATING_TIMEOUT_SEC", cfg.CreatingTimeoutSec); err != nil {

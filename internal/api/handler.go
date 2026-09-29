@@ -24,6 +24,7 @@ import (
 type Config struct {
 	DefaultDurationSec int64  // 默认申请时长（秒）
 	MaxDurationSec     int64  // 全局单次时长上限（<=0 表示不限制）
+	DefaultRenewTimes  int64  // 普通用户单实例默认可续期次数
 	CORSAllowedOrigin  string // 允许的 CORS origin，"*" 或具体 origin；空则不发 CORS 头
 	SecretKey          string // 云账号 Secret 的 AES 加密密钥（空则回落 JWTSecret）
 	DataDir            string // 数据目录（扫描 provider 插件缓存用）

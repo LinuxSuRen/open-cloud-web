@@ -35,9 +35,9 @@ func TestCanRenew(t *testing.T) {
 	}
 
 	renewed := now
-	once := &Instance{Status: StatusRunning, ExpiresAt: now.Add(time.Hour), RenewedAt: &renewed}
-	if once.CanRenew(now) {
-		t.Error("already renewed instance must not be renewable")
+	once := &Instance{Status: StatusRunning, ExpiresAt: now.Add(time.Hour), RenewedAt: &renewed, RenewedTimes: 3}
+	if !once.CanRenew(now) {
+		t.Error("已续期过的实例仍具备基础续期条件（次数配额由 API 层判断）")
 	}
 
 	creating := &Instance{Status: StatusCreating, ExpiresAt: now.Add(time.Hour)}

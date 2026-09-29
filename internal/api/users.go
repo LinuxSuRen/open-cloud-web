@@ -28,6 +28,7 @@ type createUserReq struct {
 	Email          string `json:"email"`
 	Role           string `json:"role"`
 	MaxDurationSec int64  `json:"maxDurationSec"`
+	MaxRenewTimes  int64  `json:"maxRenewTimes"` // 0=用全局默认；admin 角色不受限
 	Password       string `json:"password"`
 }
 
@@ -79,6 +80,7 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 		Provider:       "local",
 		ProviderSub:    req.Username, // users(provider, provider_sub) 唯一索引要求
 		MaxDurationSec: req.MaxDurationSec,
+		MaxRenewTimes:  req.MaxRenewTimes,
 		PasswordHash:   string(hash), // 仅 bcrypt 哈希落库，绝不回显
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -97,6 +99,7 @@ type patchUserReq struct {
 	Role           *string `json:"role"`
 	Status         *string `json:"status"`
 	MaxDurationSec *int64  `json:"maxDurationSec"`
+	MaxRenewTimes  *int64  `json:"maxRenewTimes"`
 }
 
 func (h *Handler) patchUser(w http.ResponseWriter, r *http.Request) {
@@ -150,6 +153,13 @@ func (h *Handler) patchUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		u.MaxDurationSec = *req.MaxDurationSec
+	}
+	if req.MaxRenewTimes != nil {
+		if *req.MaxRenewTimes < 0 {
+			writeError(w, http.StatusBadRequest, "maxRenewTimes must be >= 0")
+			return
+		}
+		u.MaxRenewTimes = *req.MaxRenewTimes
 	}
 	u.UpdatedAt = h.t()
 	if err := h.Store.UpdateUser(u); err != nil {

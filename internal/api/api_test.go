@@ -193,10 +193,16 @@ func TestInstanceLifecycleApplyRenewDestroy(t *testing.T) {
 		t.Fatalf("renewed expire = %v want renewedAt+3600", renewed.ExpiresAt)
 	}
 
-	// 第二次续用拒绝。
+	// 多次续期：配额 3，第 2、3 次成功，第 4 次 403。
+	for i := 2; i <= 3; i++ {
+		rec = doJSON(t, srv, "POST", fmt.Sprintf("/api/v1/instances/%d/renew", created.ID), tok, map[string]any{"durationSec": 3600})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("renew #%d: %d %s", i, rec.Code, rec.Body.String())
+		}
+	}
 	rec = doJSON(t, srv, "POST", fmt.Sprintf("/api/v1/instances/%d/renew", created.ID), tok, map[string]any{"durationSec": 3600})
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("second renew: want 400 got %d", rec.Code)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("renew #4 (over quota): want 403 got %d", rec.Code)
 	}
 
 	// 销毁：所有者，触发 tofu Destroy。

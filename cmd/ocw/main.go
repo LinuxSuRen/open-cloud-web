@@ -136,6 +136,7 @@ func run() error {
 		api.Config{
 			DefaultDurationSec: cfg.DefaultDurationSec,
 			MaxDurationSec:     cfg.MaxDurationSec,
+			DefaultRenewTimes:  cfg.DefaultRenewTimes,
 			CORSAllowedOrigin:  cfg.CORSAllowedOrigin,
 			SecretKey:          secretKey,
 			DataDir:            cfg.DataDir,

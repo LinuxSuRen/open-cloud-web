@@ -394,6 +394,7 @@ func newTestServer(t *testing.T) (*fakeStore, *fakeRunner, *Handler) {
 	h := NewHandler(store, auth.NewManager("test-secret-0000000000000"), nil, auth.NewStateManager("state-secret-0000000"), fakeRunnerFactory(runner), Config{
 		DefaultDurationSec: 3600,
 		MaxDurationSec:     7200,
+		DefaultRenewTimes:  3,
 		CORSAllowedOrigin:  "*",
 		SecretKey:          "test-enc-secret",
 	})

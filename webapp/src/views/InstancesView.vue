@@ -126,7 +126,7 @@ async function renew(id) {
   try {
     await api('POST', `/api/v1/instances/${id}/renew`, {})
     await load()
-  } catch (e) { alert('续用失败：' + e.message) }
+  } catch (e) { alert('续期失败：' + e.message) }
 }
 
 async function cancelCreate(id) {
@@ -198,7 +198,7 @@ onMounted(() => {
 onUnmounted(() => { if (timer) timer(); closeLog() })
 
 const left = (i) => Math.floor((new Date(i.expiresAt) - now.value) / 1000)
-const canRenew = (i) => i.status === 'running' && !i.renewedAt && left(i) > 0
+const canRenew = (i) => i.status === 'running' && left(i) > 0
 const accountName = (id) => accounts.value.find((a) => a.id === id)?.name || `#${id}`
 </script>
 
@@ -315,11 +315,11 @@ const accountName = (id) => accounts.value.find((a) => a.id === id)?.name || `#$
                 <div v-if="i.status === 'running'" :style="{ color: left(i) < 600 ? 'var(--err)' : 'var(--sub)', fontSize: '12px' }">
                   剩 {{ fmtDur(left(i)) }}
                 </div>
-                <div v-if="i.renewedAt" style="color:var(--sub);font-size:12px">已续用</div>
+                <div v-if="i.renewedTimes > 0" style="color:var(--sub);font-size:12px">已续 {{ i.renewedTimes }} 次</div>
               </template>
             </td>
             <td style="white-space:nowrap">
-              <button v-if="canRenew(i)" class="ghost mini" @click="renew(i.id)">续用 1 小时</button>
+              <button v-if="canRenew(i)" class="ghost mini" @click="renew(i.id)">续期 1 小时</button>
               <button
                 v-if="i.status === 'running' || i.status === 'failed'"
                 class="ghost mini danger" @click="destroy(i.id)">销毁</button>

@@ -411,8 +411,20 @@ func (h *Handler) renewInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	now := h.t()
 	if !inst.CanRenew(now) {
-		writeError(w, http.StatusBadRequest, "instance cannot be renewed (must be running, not expired, not already renewed)")
+		writeError(w, http.StatusBadRequest, "instance cannot be renewed (must be running and not expired)")
 		return
+	}
+	// 次数配额：admin 不受限；否则取 min 思路——用户级配额>0 用之，否则全局默认。
+	if u.Role != auth.RoleAdmin {
+		limit := u.MaxRenewTimes
+		if limit <= 0 {
+			limit = h.Cfg.DefaultRenewTimes
+		}
+		if limit >= 0 && inst.RenewedTimes >= limit {
+			writeError(w, http.StatusForbidden,
+				fmt.Sprintf("renew limit reached (%d/%d); ask an admin to raise your quota", inst.RenewedTimes, limit))
+			return
+		}
 	}
 	duration, err := h.resolveDuration(u, req.DurationSec)
 	if err != nil {
@@ -426,6 +438,7 @@ func (h *Handler) renewInstance(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	inst.RenewedAt = &now
+	inst.RenewedTimes++
 	inst.ExpiresAt = newExpire
 	inst.UpdatedAt = now
 	if err := h.Store.UpdateInstance(inst); err != nil {
