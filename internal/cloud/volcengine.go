@@ -106,17 +106,12 @@ func (p *VolcengineProvider) ListInstanceTypes(ctx context.Context, region strin
 		if json.Unmarshal(raw, &m) != nil {
 			continue
 		}
-		cpu := int(num(m, "CPU.CoreCount", "CpuCount", "CoreCount", "CPUCount", "CPU", "Cpu"))
-		mem := num(m, "Memory.Size", "MemorySize", "Memory", "Size")
-		// 内存单位自适应：火山不同接口/版本对 Memory 的单位不统一，
-		// 实测存在返回 MB 的情况（如 32768 表示 32G）。>=1024 视为 MB，
-		// 否则视为 GB（测试机规格常见 1-512G，阈值安全）。
-		if mem > 0 && mem < 1024 {
-			mem *= 1024 // GB -> MB
-		}
+		cpu := int(num(m, "processor.cpus", "CPU.CoreCount", "CpuCount", "CoreCount", "CPUCount", "CPU", "Cpu"))
+		// 官方文档：memory.size 单位为 MiB（如 32768 = 32G）。
+		mem := num(m, "memory.size", "Memory.Size", "MemorySize", "Memory", "Size")
 		specs = append(specs, model.InstanceTypeSpec{
 			ID:  str(m, "InstanceTypeId", "InstanceTypeID", "Id"),
-			CPU: cpu, MemoryMB: int(mem),
+			CPU: cpu, MemoryMB: int(mem), // 已是 MiB
 			Provider: p.Name(), Region: region,
 		})
 	}
@@ -323,25 +318,39 @@ func str(m map[string]any, keys ...string) string {
 		if v, ok := m[k].(string); ok && v != "" {
 			return v
 		}
+		if v, ok := lookupCI(m, k).(string); ok && v != "" {
+			return v
+		}
 	}
 	return ""
+}
+
+// lookupCI 按点分路径大小写不敏感地取值（火山 API 不同版本字段大小写
+// 不统一，如 processor.cpus / Processor.CPUs）。
+func lookupCI(m map[string]any, key string) any {
+	var v any = m
+	for _, seg := range strings.Split(key, ".") {
+		mm, ok := v.(map[string]any)
+		if !ok {
+			return nil
+		}
+		if v, ok = mm[seg]; ok {
+			continue
+		}
+		for k, val := range mm {
+			if strings.EqualFold(k, seg) {
+				v = val
+				break
+			}
+		}
+	}
+	return v
 }
 
 // num 从松散 JSON 对象按候选路径取数值；支持 "a.b" 一层嵌套。
 func num(m map[string]any, keys ...string) float64 {
 	for _, k := range keys {
-		var v any = m
-		for _, seg := range strings.Split(k, ".") {
-			mm, ok := v.(map[string]any)
-			if !ok {
-				v = nil
-				break
-			}
-			v, ok = mm[seg]
-			if !ok {
-				break
-			}
-		}
+		v := lookupExactOrCI(m, k)
 		switch n := v.(type) {
 		case float64:
 			return n
@@ -352,4 +361,19 @@ func num(m map[string]any, keys ...string) float64 {
 		}
 	}
 	return 0
+}
+
+// lookupExactOrCI 先精确匹配，失败后退回大小写不敏感路径。
+func lookupExactOrCI(m map[string]any, key string) any {
+	var v any = m
+	for _, seg := range strings.Split(key, ".") {
+		mm, ok := v.(map[string]any)
+		if !ok {
+			return nil
+		}
+		if v, ok = mm[seg]; !ok {
+			return lookupCI(m, key)
+		}
+	}
+	return v
 }

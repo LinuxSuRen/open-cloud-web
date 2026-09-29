@@ -215,7 +215,7 @@ func TestVolcengineProviderQueries(t *testing.T) {
 		case "DescribeImages":
 			fmt.Fprint(w, `{"ResponseMetadata":{},"Result":{"Images":[{"ImageID":"image-1","Name":"Ubuntu","Description":"desc","OSName":"Ubuntu 22.04"}]}}`)
 		case "DescribeInstanceTypes":
-			fmt.Fprint(w, `{"InstanceTypes":[{"InstanceTypeId":"ecs.g1.large","CPU":{"CoreCount":2},"Memory":{"Size":4}}]}`)
+			fmt.Fprint(w, `{"InstanceTypes":[{"InstanceTypeId":"ecs.g1.large","processor":{"cpus":2},"memory":{"size":4096}}]}`)
 		case "DescribeRegions":
 			fmt.Fprint(w, `{"Result":{"Regions":[{"RegionId":"cn-beijing"},{"RegionId":"cn-guangzhou"}]}}`)
 		case "DescribeZones":
