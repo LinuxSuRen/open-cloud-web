@@ -10,7 +10,8 @@ const form = reactive({
 })
 const catalog = reactive({ regions: [], zones: [], images: [], types: [], loading: '' })
 const busy = ref(false)
-const filter = ref('active') // active(默认=创建中+运行中) | all | 具体状态
+const savedFilter = localStorage.getItem('ocw_inst_filter')
+const filter = ref(['active', 'all', 'creating', 'running', 'destroying', 'destroyed', 'failed'].includes(savedFilter) ? savedFilter : 'active')
 const page = ref(1)
 const pageSize = 20
 const total = ref(0)
@@ -26,7 +27,11 @@ async function load() {
   } catch { /* 401 已全局处理 */ }
 }
 
-watch(filter, () => { page.value = 1; load() })
+watch(filter, (v) => {
+  localStorage.setItem('ocw_inst_filter', v)
+  page.value = 1
+  load()
+})
 
 function goPage(p) {
   if (p < 1 || (pages.value && p > pages.value)) return
