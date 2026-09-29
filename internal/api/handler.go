@@ -110,6 +110,8 @@ func (h *Handler) Routes() http.Handler {
 	admin.HandleFunc("PATCH /api/v1/users/{id}", h.patchUser)
 	admin.HandleFunc("DELETE /api/v1/users/{id}", h.deleteUser)
 	admin.HandleFunc("GET /api/v1/admin/audit-logs", h.listAuditLogs)
+	admin.HandleFunc("GET /api/v1/admin/settings", h.getSettings)
+	admin.HandleFunc("PUT /api/v1/admin/settings", h.putSettings)
 	public.Handle("/api/v1/users", h.requireAuthWrapper()(requireAdmin(admin)))
 	public.Handle("/api/v1/users/", h.requireAuthWrapper()(requireAdmin(admin)))
 	public.Handle("/api/v1/admin/", h.requireAuthWrapper()(requireAdmin(admin)))

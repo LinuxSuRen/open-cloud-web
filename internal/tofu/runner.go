@@ -71,6 +71,10 @@ type Config struct {
 	// Templates 可选模板文件系统（按 provider 子目录组织），
 	// 默认使用包内 embed 的 templates 目录；测试可注入内存 FS。
 	Templates fs.FS
+	// ExtraEnv 追加到 tofu 进程的额外环境变量（如代理：
+	// HTTPS_PROXY=...；registry.opentofu.org 通常直连更快，可配合
+	// NO_PROXY 精细分流，仅让 GitHub 下载走代理）。
+	ExtraEnv []string
 }
 
 // NewRunner 按配置构造 Runner。
@@ -206,6 +210,7 @@ func (r *runner) env(provider string) []string {
 		"TF_IN_AUTOMATION=1",
 		"TF_PLUGIN_CACHE_DIR="+r.pluginCacheDirPath(),
 	)
+	env = append(env, r.cfg.ExtraEnv...)
 	return append(env, r.EnvVars(provider)...)
 }
 

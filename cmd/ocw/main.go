@@ -69,10 +69,22 @@ func run() error {
 	if secretKey == "" {
 		secretKey = cfg.JWTSecret // 回落 JWT secret（生产建议独立设置 OCW_SECRET_KEY）
 	}
+	// RunnerFactory 每次调用时读取最新代理设置（admin 可在控制台随时修改）。
+	// registry.opentofu.org 固定直连（经代理常更慢），仅 GitHub 下载走代理。
 	newRunner := func(provider, ak, sk string) tofu.Runner {
+		var extra []string
+		if proxy, _ := st.GetSetting("tofu_proxy"); proxy != "" {
+			extra = []string{
+				"HTTPS_PROXY=" + proxy,
+				"HTTP_PROXY=" + proxy,
+				"NO_PROXY=registry.opentofu.org,127.0.0.1,localhost",
+			}
+			log.Printf("[ocw] tofu 使用代理 %s（registry.opentofu.org 直连）", proxy)
+		}
 		return tofu.NewRunner(tofu.Config{
 			TofuPath: cfg.TofuBinary,
 			DataDir:  cfg.DataDir,
+			ExtraEnv: extra,
 			Credentials: tofu.Credentials{
 				provider: {"access_key": ak, "secret_key": sk},
 			},

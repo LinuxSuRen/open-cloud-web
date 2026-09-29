@@ -40,6 +40,9 @@ type Store interface {
 	ListCloudAccounts() ([]*model.CloudAccount, error)
 	UpdateCloudAccount(*model.CloudAccount) error
 	DeleteCloudAccount(id int64) error
+	// settings（系统级键值配置，如 tofu 下载代理）
+	GetSetting(key string) (string, error)
+	SetSetting(key, value string) error
 	// audit
 	CreateAuditLog(*model.AuditLog) error
 	ListAuditLogs(limit, offset int) ([]*model.AuditLog, error)

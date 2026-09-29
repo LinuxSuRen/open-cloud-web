@@ -37,6 +37,9 @@ type Store interface {
 	ListCloudAccounts() ([]*model.CloudAccount, error)
 	UpdateCloudAccount(*model.CloudAccount) error
 	DeleteCloudAccount(id int64) error
+	// settings
+	GetSetting(key string) (string, error)
+	SetSetting(key, value string) error
 	// audit
 	CreateAuditLog(*AuditLog) error
 	ListAuditLogs(limit, offset int) ([]*AuditLog, error)

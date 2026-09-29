@@ -99,6 +99,11 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     created_at TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT ''
+);
 `
 
 // OpenSQLite 打开（必要时创建）SQLite 数据库并建表。

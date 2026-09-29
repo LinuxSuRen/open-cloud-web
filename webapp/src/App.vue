@@ -7,6 +7,7 @@ import CloudAccountsView from './views/CloudAccountsView.vue'
 import UsersView from './views/UsersView.vue'
 import PatsView from './views/PatsView.vue'
 import AuditView from './views/AuditView.vue'
+import SettingsView from './views/SettingsView.vue'
 
 const view = ref('instances')
 const isAdmin = computed(() => store.me?.role === 'admin')
@@ -16,6 +17,7 @@ const tabs = computed(() => [
   ...(isAdmin.value ? [{ id: 'users', label: '用户管理' }] : []),
   { id: 'pats', label: '访问令牌' },
   ...(isAdmin.value ? [{ id: 'audit', label: '审计日志' }] : []),
+  ...(isAdmin.value ? [{ id: 'settings', label: '系统设置' }] : []),
 ])
 
 function logout() {
@@ -49,6 +51,7 @@ async function goFeishu() {
       <UsersView v-if="isAdmin" v-show="view === 'users'" />
       <PatsView v-show="view === 'pats'" />
       <AuditView v-if="isAdmin" v-show="view === 'audit'" />
+      <SettingsView v-if="isAdmin" v-show="view === 'settings'" />
     </main>
   </div>
 </template>

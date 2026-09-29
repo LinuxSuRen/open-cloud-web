@@ -87,10 +87,10 @@ func (h *Handler) createAccount(w http.ResponseWriter, r *http.Request) {
 }
 
 type patchAccountReq struct {
-	Name       *string `json:"name"`
-	AccessKey  *string `json:"accessKey"`
-	SecretKey  *string `json:"secretKey"`
-	Region     *string `json:"region"`
+	Name      *string `json:"name"`
+	AccessKey *string `json:"accessKey"`
+	SecretKey *string `json:"secretKey"`
+	Region    *string `json:"region"`
 }
 
 // patchAccount PATCH /api/v1/cloud-accounts/{id}：修改配置（所有者或 admin）。

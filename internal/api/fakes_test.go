@@ -24,6 +24,7 @@ type fakeStore struct {
 	accounts  map[int64]*model.CloudAccount
 	audit     []*AuditLog
 	hashes    map[int64]string
+	settings  map[string]string
 }
 
 func newFakeStore() *fakeStore {
@@ -208,6 +209,22 @@ func (s *fakeStore) DeleteInstance(id int64) error {
 		return auth.ErrNotFound
 	}
 	delete(s.instances, id)
+	return nil
+}
+
+func (s *fakeStore) GetSetting(key string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.settings[key], nil
+}
+
+func (s *fakeStore) SetSetting(key, value string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.settings == nil {
+		s.settings = map[string]string{}
+	}
+	s.settings[key] = value
 	return nil
 }
 
