@@ -40,6 +40,11 @@ type Store interface {
 	ListCloudAccounts() ([]*model.CloudAccount, error)
 	UpdateCloudAccount(*model.CloudAccount) error
 	DeleteCloudAccount(id int64) error
+	// security group（命名端口集合）
+	CreateSecurityGroup(*model.SecurityGroup) error
+	GetSecurityGroup(id int64) (*model.SecurityGroup, error)
+	ListSecurityGroups(userID int64) ([]*model.SecurityGroup, error) // 含全局预置
+	DeleteSecurityGroup(id int64) error
 	// settings（系统级键值配置，如 tofu 下载代理）
 	GetSetting(key string) (string, error)
 	SetSetting(key, value string) error

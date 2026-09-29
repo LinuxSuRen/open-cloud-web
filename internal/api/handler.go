@@ -102,6 +102,10 @@ func (h *Handler) Routes() http.Handler {
 	authed.HandleFunc("GET /api/v1/instances/{id}/logs", h.instanceLogs)
 
 	// 云账号（用户添加的云提供商认证信息）及其目录查询。
+	authed.HandleFunc("GET /api/v1/security-groups", h.listSecurityGroups)
+	authed.HandleFunc("POST /api/v1/security-groups", h.createSecurityGroup)
+	authed.HandleFunc("DELETE /api/v1/security-groups/{id}", h.deleteSecurityGroup)
+
 	authed.HandleFunc("GET /api/v1/cloud-accounts", h.listAccounts)
 	authed.HandleFunc("POST /api/v1/cloud-accounts", h.createAccount)
 	authed.HandleFunc("PATCH /api/v1/cloud-accounts/{id}", h.patchAccount)

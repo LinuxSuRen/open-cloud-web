@@ -72,6 +72,7 @@ func run() error {
 	if err := bootstrapAdmin(st, cfg.AdminBootstrapToken); err != nil {
 		return err
 	}
+	seedSecurityGroups(st)
 
 	// 4. 认证：JWT manager + OAuth state 管理 + 飞书 OAuth。
 	mgr := auth.NewManager(cfg.JWTSecret)
@@ -290,4 +291,29 @@ func (d *accountDestroyer) Destroy(ctx context.Context, workspace string) error 
 		return fmt.Errorf("destroy %s: %w", workspace, err)
 	}
 	return d.newRunner(acct.Provider, acct.AccessKey, sk).Destroy(ctx, workspace)
+}
+
+// seedSecurityGroups 首次启动预置常用端口集合（已存在则跳过）。
+func seedSecurityGroups(st store.Store) {
+	if existing, err := st.ListSecurityGroups(0); err == nil && len(existing) > 0 {
+		return
+	}
+	presets := []struct {
+		name   string
+		ports  []int
+		remark string
+	}{
+		{"仅 SSH", []int{22}, "默认：仅开放 SSH"},
+		{"Web 服务", []int{22, 80, 443}, "SSH + HTTP/HTTPS"},
+		{"MQTT 服务", []int{22, 1883, 8883}, "SSH + MQTT/MQTTS"},
+		{"常用测试", []int{22, 80, 443, 1883, 3306, 6379, 8080}, "SSH/Web/MQTT/MySQL/Redis/8080"},
+	}
+	for _, p := range presets {
+		if err := st.CreateSecurityGroup(&model.SecurityGroup{
+			UserID: 0, Name: p.name, Ports: p.ports, Remark: p.remark,
+		}); err != nil {
+			log.Printf("[ocw] seed security group %q: %v", p.name, err)
+		}
+	}
+	log.Printf("[ocw] seeded %d preset security groups", len(presets))
 }

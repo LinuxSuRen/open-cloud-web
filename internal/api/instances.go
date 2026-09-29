@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/linuxsuren/open-cloud-web/internal/auth"
+	"github.com/linuxsuren/open-cloud-web/internal/model"
 )
 
 // maxConcurrentCreating 同一用户并发 Creating 状态实例上限。
@@ -20,7 +22,8 @@ const maxConcurrentCreating = 5
 const applyTimeout = 30 * time.Minute
 
 type createInstanceReq struct {
-	CloudAccountID int64  `json:"cloudAccountID"` // 必填：用户添加的云账号
+	CloudAccountID  int64  `json:"cloudAccountID"` // 必填：用户添加的云账号
+	SecurityGroupID int64  `json:"securityGroupID"` // 端口集合；0=取第一个可用分组
 	Region         string `json:"region"`
 	Zone           string `json:"zone"`
 	ImageID        string `json:"imageID"`
@@ -100,6 +103,25 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.CloudAccountID <= 0 {
 		writeError(w, http.StatusBadRequest, "cloudAccountID is required (add a cloud account first)")
+		return
+	}
+	// 安全组端口集合：未指定时回落第一个可用分组。
+	sgID := req.SecurityGroupID
+	if sgID == 0 {
+		sgs, sgErr := h.Store.ListSecurityGroups(u.ID)
+		if sgErr != nil || len(sgs) == 0 {
+			writeError(w, http.StatusBadRequest, "no security group available; create one first")
+			return
+		}
+		sgID = sgs[0].ID
+	}
+	sg, err := h.Store.GetSecurityGroup(sgID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "security group not found")
+		return
+	}
+	if sg.UserID != 0 && sg.UserID != u.ID && u.Role != auth.RoleAdmin {
+		writeError(w, http.StatusForbidden, "not your security group")
 		return
 	}
 	// SSH 密码：用户指定或自动生成；加密落库，响应返回明文一次。
@@ -198,14 +220,14 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 	inst.Password = password // 仅随本次响应返回明文
 	h.ILogs.Append(inst.ID, "创建请求受理，开始准备 OpenTofu 工作区（provider 未缓存时先下载）…")
 	h.audit(u.ID, "instance.create", fmt.Sprintf("id=%d account=%d(%s) provider=%s region=%s duration=%ds", inst.ID, account.ID, account.Name, inst.Provider, inst.Region, inst.DurationSec))
-	go h.applyInstance(runner, inst)
+	go h.applyInstance(runner, inst, sg)
 	h.Hub.Broadcast(refreshEvent())
 	writeJSON(w, http.StatusAccepted, inst)
 }
 
 // applyInstance 异步执行 OpenTofu Apply；成功后写入 IP、置 Running，
 // ExpiresAt 从 apply 完成时刻起算；失败置 Failed + ErrorMessage。
-func (h *Handler) applyInstance(runner Runner, inst *Instance) {
+func (h *Handler) applyInstance(runner Runner, inst *Instance, sg *model.SecurityGroup) {
 	ctx, cancel := context.WithTimeout(context.Background(), applyTimeout)
 	defer cancel()
 	vars := map[string]string{
@@ -216,6 +238,7 @@ func (h *Handler) applyInstance(runner Runner, inst *Instance) {
 		"instance_type":    inst.InstanceType,
 		"instance_name":    inst.Name,
 		"public_bandwidth": "5",
+		"ingress_ports":    portsJoin(sg.Ports),
 		"password":         h.instPassword(inst),
 	}
 	done := make(chan error, 1)
@@ -535,4 +558,13 @@ func randHex(n int) string {
 		return "00000000"
 	}
 	return hex.EncodeToString(buf)
+}
+
+// portsJoin 端口数组转逗号串（模板 split 后 for_each）。
+func portsJoin(ports []int) string {
+	var ps []string
+	for _, p := range ports {
+		ps = append(ps, strconv.Itoa(p))
+	}
+	return strings.Join(ps, ",")
 }

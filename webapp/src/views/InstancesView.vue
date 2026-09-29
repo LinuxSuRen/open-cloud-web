@@ -4,9 +4,11 @@ import { api, arr, fmtDur, fmtTime, PROV_NAME, ST_NAME, connectWS } from '../api
 
 const instances = ref([])
 const accounts = ref([])
+const sgs = ref([])
 const form = reactive({
   accountID: null, region: '', zone: '', imageID: '',
   instanceType: '', durationSec: null, name: '', password: '',
+  securityGroupID: null,
 })
 const catalog = reactive({ regions: [], zones: [], images: [], types: [], loading: '' })
 const busy = ref(false)
@@ -53,6 +55,12 @@ async function removeRecord(id) {
     await api('DELETE', `/api/v1/instances/${id}`)
     await load()
   } catch (e) { alert('删除失败：' + e.message) }
+}
+
+async function loadSgs() {
+  const d = await api('GET', '/api/v1/security-groups')
+  sgs.value = arr(d.groups)
+  if (!form.securityGroupID && sgs.value.length) form.securityGroupID = sgs.value[0].id
 }
 
 async function loadAccounts() {
@@ -111,6 +119,7 @@ async function create() {
   try {
     await api('POST', '/api/v1/instances', {
       cloudAccountID: form.accountID,
+      securityGroupID: form.securityGroupID || 0,
       region: form.region,
       zone: form.zone,
       imageID: form.imageID,
@@ -190,6 +199,7 @@ function closeLog() {
 onMounted(() => {
   load()
   loadAccounts()
+  loadSgs()
   now.value = Date.now()
   // 服务端推送刷新（替代 15s 轮询）；断线自动重连，多次失败降级轮询。
   timer = connectWS(
@@ -256,6 +266,11 @@ const accountName = (id) => accounts.value.find((a) => a.id === id)?.name || `#$
         </label>
         <label>名称（可选）
           <input v-model="form.name" placeholder="自动生成" style="width:130px" />
+        </label>
+        <label>安全组
+          <select v-model="form.securityGroupID" style="max-width:220px">
+            <option v-for="g in sgs" :key="g.id" :value="g.id">{{ g.name }}（{{ g.ports.join('/') }}）</option>
+          </select>
         </label>
         <label>SSH 密码（留空自动生成）
           <input v-model="form.password" type="password" placeholder="自动生成" style="width:130px" />

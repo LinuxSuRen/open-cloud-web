@@ -45,7 +45,8 @@ resource "alicloud_security_group" "this" {
 }
 
 resource "alicloud_security_group_rule" "ingress" {
-  for_each          = toset(["22", "80", "443"])
+  # 端口集合由平台注入（逗号分隔字符串），如 "22,80,443,1883"。
+  for_each          = toset(split(",", var.ingress_ports))
   type              = "ingress"
   ip_protocol       = "tcp"
   port_range        = "${each.value}/${each.value}"

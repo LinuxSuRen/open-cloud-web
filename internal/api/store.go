@@ -37,6 +37,11 @@ type Store interface {
 	ListCloudAccounts() ([]*model.CloudAccount, error)
 	UpdateCloudAccount(*model.CloudAccount) error
 	DeleteCloudAccount(id int64) error
+	// security group
+	CreateSecurityGroup(*model.SecurityGroup) error
+	GetSecurityGroup(id int64) (*model.SecurityGroup, error)
+	ListSecurityGroups(userID int64) ([]*model.SecurityGroup, error)
+	DeleteSecurityGroup(id int64) error
 	// settings
 	GetSetting(key string) (string, error)
 	SetSetting(key, value string) error

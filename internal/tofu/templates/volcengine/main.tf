@@ -43,11 +43,12 @@ resource "volcengine_security_group" "this" {
 }
 
 resource "volcengine_security_group_rule" "ingress" {
-  for_each          = toset(["22", "80", "443"])
+  # 端口集合由平台注入（逗号分隔字符串），如 "22,80,443,1883"。
+  for_each          = toset(split(",", var.ingress_ports))
   security_group_id = volcengine_security_group.this.id
   protocol          = "tcp"
-  port_start        = each.value
-  port_end          = each.value
+  port_start        = tonumber(each.value)
+  port_end          = tonumber(each.value)
   cidr_ip           = "0.0.0.0/0"
   direction         = "ingress"
 }

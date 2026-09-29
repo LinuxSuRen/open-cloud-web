@@ -25,6 +25,7 @@ type fakeStore struct {
 	audit     []*AuditLog
 	hashes    map[int64]string
 	settings  map[string]string
+	sgs       []*model.SecurityGroup
 }
 
 func newFakeStore() *fakeStore {
@@ -212,6 +213,54 @@ func (s *fakeStore) DeleteInstance(id int64) error {
 	return nil
 }
 
+func (s *fakeStore) CreateSecurityGroup(g *model.SecurityGroup) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nextID++
+	g.ID = s.nextID
+	cp := *g
+	cp.Ports = append([]int(nil), g.Ports...)
+	s.sgs = append(s.sgs, &cp)
+	return nil
+}
+
+func (s *fakeStore) GetSecurityGroup(id int64) (*model.SecurityGroup, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, g := range s.sgs {
+		if g.ID == id {
+			cp := *g
+			return &cp, nil
+		}
+	}
+	return nil, auth.ErrNotFound
+}
+
+func (s *fakeStore) ListSecurityGroups(userID int64) ([]*model.SecurityGroup, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*model.SecurityGroup
+	for _, g := range s.sgs {
+		if g.UserID == 0 || g.UserID == userID {
+			cp := *g
+			out = append(out, &cp)
+		}
+	}
+	return out, nil
+}
+
+func (s *fakeStore) DeleteSecurityGroup(id int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, g := range s.sgs {
+		if g.ID == id {
+			s.sgs = append(s.sgs[:i], s.sgs[i+1:]...)
+			return nil
+		}
+	}
+	return auth.ErrNotFound
+}
+
 func (s *fakeStore) GetSetting(key string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -390,6 +439,8 @@ func fakeRunnerFactory(runner *fakeRunner) RunnerFactory {
 func newTestServer(t *testing.T) (*fakeStore, *fakeRunner, *Handler) {
 	t.Helper()
 	store := newFakeStore()
+	// 预置一个安全组（模拟 seedSecurityGroups）。
+	_ = store.CreateSecurityGroup(&model.SecurityGroup{UserID: 0, Name: "preset", Ports: []int{22, 80, 443}})
 	runner := newFakeRunner()
 	h := NewHandler(store, auth.NewManager("test-secret-0000000000000"), nil, auth.NewStateManager("state-secret-0000000"), fakeRunnerFactory(runner), Config{
 		DefaultDurationSec: 3600,

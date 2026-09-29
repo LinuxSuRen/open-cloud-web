@@ -78,3 +78,9 @@ variable "password" {
   sensitive   = true
   default     = ""
 }
+
+variable "ingress_ports" {
+  description = "安全组放行的 TCP 入方向端口（逗号分隔）"
+  type        = string
+  default     = "22,80,443"
+}
