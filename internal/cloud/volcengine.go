@@ -103,11 +103,17 @@ func (p *VolcengineProvider) ListInstanceTypes(ctx context.Context, region strin
 		if json.Unmarshal(raw, &m) != nil {
 			continue
 		}
-		cpu := int(num(m, "CPU.CoreCount", "CpuCount", "CoreCount"))
-		memGB := num(m, "Memory.Size", "MemorySize", "Size")
+		cpu := int(num(m, "CPU.CoreCount", "CpuCount", "CoreCount", "CPUCount", "CPU", "Cpu"))
+		mem := num(m, "Memory.Size", "MemorySize", "Memory", "Size")
+		// 内存单位自适应：火山不同接口/版本对 Memory 的单位不统一，
+		// 实测存在返回 MB 的情况（如 32768 表示 32G）。>=1024 视为 MB，
+		// 否则视为 GB（测试机规格常见 1-512G，阈值安全）。
+		if mem > 0 && mem < 1024 {
+			mem *= 1024 // GB -> MB
+		}
 		specs = append(specs, model.InstanceTypeSpec{
 			ID:  str(m, "InstanceTypeId", "InstanceTypeID", "Id"),
-			CPU: cpu, MemoryMB: int(memGB * 1024), // GB -> MB
+			CPU: cpu, MemoryMB: int(mem),
 			Provider: p.Name(), Region: region,
 		})
 	}
