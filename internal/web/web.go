@@ -12,7 +12,7 @@ import (
 //go:embed all:dist
 var distFS embed.FS
 
-// Handler 返回根路径处理器：非 /api、/healthz 的路径回落到 SPA。
+// Handler 返回根路径处理器：静态资源与 SPA 路由。
 func Handler() http.Handler {
 	sub, err := fs.Sub(distFS, "dist")
 	if err != nil {
@@ -20,12 +20,24 @@ func Handler() http.Handler {
 	}
 	fileServer := http.FileServer(http.FS(sub))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p := r.URL.Path
-		if p != "/" {
-			// 资源不存在时回落 index.html（SPA 路由）。
-			if _, err := fs.Stat(sub, strings.TrimPrefix(p, "/")); err != nil {
+		p := strings.TrimPrefix(r.URL.Path, "/")
+		if p != "" {
+			_, statErr := fs.Stat(sub, p)
+			if statErr != nil {
+				// 带哈希指纹的构建产物不存在时必须 404：
+				// 若回落 index.html，浏览器会把 HTML 当 JS 加载导致整页空白
+				// （典型于浏览器缓存了旧 index.html 引用旧哈希资源）。
+				if strings.HasPrefix(p, "assets/") {
+					http.NotFound(w, r)
+					return
+				}
+				// 其余未知路径回落 SPA 入口（前端路由）。
 				r.URL.Path = "/"
 			}
+		}
+		// index.html 不缓存，保证发版后立即拿到新资源引用。
+		if r.URL.Path == "/" {
+			w.Header().Set("Cache-Control", "no-cache")
 		}
 		fileServer.ServeHTTP(w, r)
 	})
