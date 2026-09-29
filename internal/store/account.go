@@ -8,13 +8,13 @@ import (
 	"github.com/linuxsuren/open-cloud-web/internal/model"
 )
 
-const accountCols = `id, user_id, name, provider, access_key, secret_enc, region, created_at, updated_at`
+const accountCols = `id, user_id, name, provider, access_key, secret_enc, session_enc, region, created_at, updated_at`
 
 func scanAccount(row interface{ Scan(...any) error }) (*model.CloudAccount, error) {
 	var a model.CloudAccount
 	var createdAt, updatedAt string
 	err := row.Scan(&a.ID, &a.UserID, &a.Name, &a.Provider, &a.AccessKey, &a.SecretEnc,
-		&a.Region, &createdAt, &updatedAt)
+		&a.SessionEnc, &a.Region, &createdAt, &updatedAt)
 	if errorsIs(err) {
 		return nil, ErrNotFound
 	}
@@ -47,9 +47,9 @@ func (s *SQLiteStore) CreateCloudAccount(a *model.CloudAccount) error {
 	}
 	a.UpdatedAt = now
 	res, err := s.db.Exec(
-		`INSERT INTO cloud_accounts (user_id, name, provider, access_key, secret_enc, region, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.UserID, a.Name, a.Provider, a.AccessKey, a.SecretEnc, a.Region,
+		`INSERT INTO cloud_accounts (user_id, name, provider, access_key, secret_enc, session_enc, region, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.UserID, a.Name, a.Provider, a.AccessKey, a.SecretEnc, a.SessionEnc, a.Region,
 		fmtTime(a.CreatedAt), fmtTime(a.UpdatedAt),
 	)
 	if err != nil {
@@ -111,8 +111,8 @@ func (s *SQLiteStore) UpdateCloudAccount(a *model.CloudAccount) error {
 	}
 	a.UpdatedAt = time.Now().UTC()
 	res, err := s.db.Exec(
-		`UPDATE cloud_accounts SET name=?, provider=?, access_key=?, secret_enc=?, region=?, updated_at=? WHERE id=?`,
-		a.Name, a.Provider, a.AccessKey, a.SecretEnc, a.Region, fmtTime(a.UpdatedAt), a.ID,
+		`UPDATE cloud_accounts SET name=?, provider=?, access_key=?, secret_enc=?, session_enc=?, region=?, updated_at=? WHERE id=?`,
+		a.Name, a.Provider, a.AccessKey, a.SecretEnc, a.SessionEnc, a.Region, fmtTime(a.UpdatedAt), a.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("store: update cloud account %d: %w", a.ID, err)

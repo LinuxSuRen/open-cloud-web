@@ -18,9 +18,10 @@ terraform {
 }
 
 provider "volcengine" {
-  region     = var.region
-  access_key = var.access_key
-  secret_key = var.secret_key
+  region        = var.region
+  access_key    = var.access_key
+  secret_key    = var.secret_key
+  session_token = var.session_token # 临时密钥(STS)时必填，长期密钥为空
 }
 
 resource "volcengine_vpc" "this" {

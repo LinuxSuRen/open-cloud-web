@@ -64,3 +64,10 @@ variable "system_volume_size" {
   type        = number
   default     = 40
 }
+
+variable "session_token" {
+  description = "火山引擎临时访问密钥的 SessionToken（长期密钥留空）"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

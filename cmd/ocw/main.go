@@ -72,7 +72,7 @@ func run() error {
 	}
 	// RunnerFactory 每次调用时读取最新代理设置（admin 可在控制台随时修改）。
 	// registry.opentofu.org 固定直连（经代理常更慢），仅 GitHub 下载走代理。
-	newRunner := func(provider, ak, sk string, onLog func(string)) tofu.Runner {
+	newRunner := func(provider, ak, sk, session string, onLog func(string)) tofu.Runner {
 		var extra []string
 		if proxy, _ := st.GetSetting("http_proxy_tofu"); proxy != "" {
 			extra = []string{
@@ -88,7 +88,7 @@ func run() error {
 			OnLog:    onLog,
 			ExtraEnv: extra,
 			Credentials: tofu.Credentials{
-				provider: {"access_key": ak, "secret_key": sk},
+				provider: {"access_key": ak, "secret_key": sk, "session_token": session},
 			},
 		})
 	}
@@ -97,7 +97,7 @@ func run() error {
 	// 适配为 scheduler.InstanceStore；accountDestroyer 按 workspace 恢复账号凭据。
 	sched := scheduler.New(
 		&storeSchedulerAdapter{store: st},
-		&accountDestroyer{store: st, secretKey: secretKey, newRunner: func(p, a, k string) tofu.Runner { return newRunner(p, a, k, nil) }},
+		&accountDestroyer{store: st, secretKey: secretKey, newRunner: func(p, a, k string) tofu.Runner { return newRunner(p, a, k, "", nil) }},
 		func(userID int64, action, detail string) {
 			_ = st.CreateAuditLog(&model.AuditLog{UserID: userID, Action: action, Detail: detail, CreatedAt: time.Now().UTC()})
 		},
@@ -112,8 +112,8 @@ func run() error {
 	// 7. HTTP API（/api/v1，含 GET /healthz 健康检查）。
 	handler := api.NewHandler(
 		st, mgr, feishu, states,
-		func(provider, ak, sk string, onLog func(string)) api.Runner {
-			return newRunner(provider, ak, sk, onLog)
+		func(provider, ak, sk, session string, onLog func(string)) api.Runner {
+			return newRunner(provider, ak, sk, session, onLog)
 		},
 		api.Config{
 			DefaultDurationSec: cfg.DefaultDurationSec,
@@ -125,7 +125,7 @@ func run() error {
 	)
 	// provider 预下载：init 不调云 API，用空凭据的 runner 即可。
 	handler.PreloadProvider = func(ctx context.Context, provider string, w io.Writer) error {
-		return newRunner(provider, "", "", nil).(interface {
+		return newRunner(provider, "", "", "", nil).(interface {
 			Preload(ctx context.Context, provider string, progress io.Writer) error
 		}).Preload(ctx, provider, w)
 	}

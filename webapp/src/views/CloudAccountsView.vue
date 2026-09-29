@@ -3,11 +3,11 @@ import { ref, reactive, onMounted } from 'vue'
 import { api, arr, fmtTime } from '../api'
 
 const accounts = ref([])
-const form = reactive({ name: '', provider: 'alicloud', accessKey: '', secretKey: '' })
+const form = reactive({ name: '', provider: 'alicloud', accessKey: '', secretKey: '', sessionToken: '' })
 const busy = ref(false)
 const testing = ref(0) // 正在测试的账号 ID
 const editing = ref(0) // 正在编辑的账号 ID
-const editForm = reactive({ name: '', accessKey: '', secretKey: '' })
+const editForm = reactive({ name: '', accessKey: '', secretKey: '', sessionToken: '' })
 const results = reactive({}) // id -> { status, message }
 
 async function load() {
@@ -33,11 +33,14 @@ function startEdit(a) {
   editForm.name = a.name
   editForm.accessKey = a.accessKey
   editForm.secretKey = ''
+  editForm.sessionToken = a.hasSessionToken ? '（已设置）' : ''
 }
 
 async function saveEdit(a) {
   const body = { name: editForm.name.trim() || a.name, accessKey: editForm.accessKey || a.accessKey }
-  if (editForm.secretKey) body.secretKey = editForm.secretKey
+  if (editForm.secretKey && !editForm.secretKey.startsWith('（')) body.secretKey = editForm.secretKey
+  if (editForm.sessionToken === '') body.sessionToken = ''
+  else if (!editForm.sessionToken.startsWith('（')) body.sessionToken = editForm.sessionToken
   try {
     await api('PATCH', `/api/v1/cloud-accounts/${a.id}`, body)
     editing.value = 0
@@ -83,6 +86,7 @@ const PROV = { alicloud: '阿里云', volcengine: '火山引擎' }
         </label>
         <label>AccessKey ID <input v-model="form.accessKey" style="width:220px" /></label>
         <label>AccessKey Secret <input v-model="form.secretKey" type="password" style="width:220px" /></label>
+        <label>SessionToken（STS 临时密钥必填，长期密钥留空） <input v-model="form.sessionToken" type="password" style="width:220px" /></label>
         <button class="btn" :disabled="busy || !form.name || !form.accessKey || !form.secretKey" @click="create">
           {{ busy ? '添加中…' : '添加' }}
         </button>
@@ -102,6 +106,7 @@ const PROV = { alicloud: '阿里云', volcengine: '火山引擎' }
                 <label>名称 <input v-model="editForm.name" /></label>
                 <label>AccessKey ID <input v-model="editForm.accessKey" /></label>
                 <label>AccessKey Secret（留空则不修改） <input v-model="editForm.secretKey" type="password" /></label>
+                <label>SessionToken（STS 临时密钥用；留空=清除） <input v-model="editForm.sessionToken" type="password" /></label>
                 <div class="row">
                   <button class="btn mini" @click="saveEdit(a)">保存</button>
                   <button class="ghost mini" @click="editing = 0">取消</button>

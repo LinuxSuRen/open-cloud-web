@@ -14,11 +14,12 @@ import (
 const maxKeyName = 128
 
 type createAccountReq struct {
-	Name      string `json:"name"`
-	Provider  string `json:"provider"`
-	AccessKey string `json:"accessKey"`
-	SecretKey string `json:"secretKey"`
-	Region    string `json:"region"`
+	Name         string `json:"name"`
+	Provider     string `json:"provider"`
+	AccessKey    string `json:"accessKey"`
+	SecretKey    string `json:"secretKey"`
+	SessionToken string `json:"sessionToken"` // 临时密钥(STS)必填，长期密钥留空
+	Region       string `json:"region"`
 }
 
 // listAccounts GET /api/v1/cloud-accounts：普通用户看自己的，admin 看全部。
@@ -36,6 +37,9 @@ func (h *Handler) listAccounts(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list cloud accounts")
 		return
+	}
+	for _, a := range accounts {
+		a.HasSessionToken = a.SessionEnc != ""
 	}
 	if accounts == nil {
 		accounts = []*model.CloudAccount{}
@@ -67,30 +71,40 @@ func (h *Handler) createAccount(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to encrypt secret")
 		return
 	}
+	sessEnc := ""
+	if req.SessionToken != "" {
+		if sessEnc, err = encryptSecret(req.SessionToken, h.Cfg.SecretKey); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to encrypt session token")
+			return
+		}
+	}
 	now := h.t()
 	a := &model.CloudAccount{
-		UserID:    u.ID,
-		Name:      req.Name,
-		Provider:  req.Provider,
-		AccessKey: req.AccessKey,
-		SecretEnc: enc,
-		Region:    req.Region,
-		CreatedAt: now,
-		UpdatedAt: now,
+		UserID:     u.ID,
+		Name:       req.Name,
+		Provider:   req.Provider,
+		AccessKey:  req.AccessKey,
+		SecretEnc:  enc,
+		SessionEnc: sessEnc,
+		Region:     req.Region,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 	if err := h.Store.CreateCloudAccount(a); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create cloud account")
 		return
 	}
 	h.audit(u.ID, "cloud_account.create", req.Name+" ("+req.Provider+")")
+	a.HasSessionToken = a.SessionEnc != ""
 	writeJSON(w, http.StatusCreated, a)
 }
 
 type patchAccountReq struct {
-	Name      *string `json:"name"`
-	AccessKey *string `json:"accessKey"`
-	SecretKey *string `json:"secretKey"`
-	Region    *string `json:"region"`
+	Name         *string `json:"name"`
+	AccessKey    *string `json:"accessKey"`
+	SecretKey    *string `json:"secretKey"`
+	SessionToken *string `json:"sessionToken"`
+	Region       *string `json:"region"`
 }
 
 // patchAccount PATCH /api/v1/cloud-accounts/{id}：修改配置（所有者或 admin）。
@@ -143,6 +157,16 @@ func (h *Handler) patchAccount(w http.ResponseWriter, r *http.Request) {
 		}
 		a.SecretEnc = enc
 	}
+	if req.SessionToken != nil {
+		if *req.SessionToken == "" {
+			a.SessionEnc = ""
+		} else if enc, err := encryptSecret(*req.SessionToken, h.Cfg.SecretKey); err == nil {
+			a.SessionEnc = enc
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to encrypt session token")
+			return
+		}
+	}
 	if req.Region != nil {
 		a.Region = *req.Region
 	}
@@ -151,6 +175,7 @@ func (h *Handler) patchAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.audit(u.ID, "cloud_account.update", a.Name)
+	a.HasSessionToken = a.SessionEnc != ""
 	writeJSON(w, http.StatusOK, a)
 }
 
@@ -240,12 +265,13 @@ func (h *Handler) runnerForAccountLog(accountID int64, onLog func(string)) (Runn
 	if err != nil {
 		return nil, nil, err
 	}
-	runner := h.NewRunner(a.Provider, a.AccessKey, secret, nil)
-	if onLog != nil {
-		// 有日志回调时重建带回调的 runner（销毁路径暂不需要过程日志）。
-		runner = h.NewRunner(a.Provider, a.AccessKey, secret, onLog)
+	session := ""
+	if a.SessionEnc != "" {
+		if session, err = decryptSecret(a.SessionEnc, h.Cfg.SecretKey); err != nil {
+			return nil, nil, err
+		}
 	}
-	return runner, a, nil
+	return h.NewRunner(a.Provider, a.AccessKey, secret, session, onLog), a, nil
 }
 
 // loadAccountRunner 为实例创建构造 Runner（含归属校验）。

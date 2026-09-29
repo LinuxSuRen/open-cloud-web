@@ -20,9 +20,10 @@ terraform {
 }
 
 provider "alicloud" {
-  region     = var.region
-  access_key = var.access_key
-  secret_key = var.secret_key
+  region         = var.region
+  access_key     = var.access_key
+  secret_key     = var.secret_key
+  security_token = var.session_token # STS 临时密钥时必填，长期密钥为空
 }
 
 resource "alicloud_vpc" "this" {
@@ -39,8 +40,8 @@ resource "alicloud_vswitch" "this" {
 
 # 安全组：内联创建并放行 22/80/443 入方向 TCP。
 resource "alicloud_security_group" "this" {
-  name   = var.security_group
-  vpc_id = alicloud_vpc.this.id
+  security_group_name = var.security_group
+  vpc_id              = alicloud_vpc.this.id
 }
 
 resource "alicloud_security_group_rule" "ingress" {

@@ -52,3 +52,10 @@ variable "secret_key" {
   sensitive   = true
   default     = ""
 }
+
+variable "session_token" {
+  description = "阿里云 STS 临时密钥的 SecurityToken（长期密钥留空）"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

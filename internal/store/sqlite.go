@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS cloud_accounts (
     provider    TEXT    NOT NULL,
     access_key  TEXT    NOT NULL,
     secret_enc  TEXT    NOT NULL,
+    session_enc TEXT    NOT NULL DEFAULT '',
     region      TEXT    NOT NULL DEFAULT '',
     created_at  TEXT    NOT NULL,
     updated_at  TEXT    NOT NULL,
@@ -141,6 +142,7 @@ func (s *SQLiteStore) init() error {
 var migrations = []struct{ table, column, ddl string }{
 	{"users", "password_hash", "ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''"},
 	{"instances", "cloud_account_id", "ALTER TABLE instances ADD COLUMN cloud_account_id INTEGER NOT NULL DEFAULT 0"},
+	{"cloud_accounts", "session_enc", "ALTER TABLE cloud_accounts ADD COLUMN session_enc TEXT NOT NULL DEFAULT ''"},
 }
 
 func (s *SQLiteStore) migrate() error {
