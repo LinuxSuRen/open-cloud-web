@@ -255,11 +255,16 @@ const accountName = (id) => accounts.value.find((a) => a.id === id)?.name || `#$
               <template v-else>—</template>
             </td>
             <td>
-              {{ fmtTime(i.expiresAt) }}
-              <div v-if="i.status === 'running'" :style="{ color: left(i) < 600 ? 'var(--err)' : 'var(--sub)', fontSize: '12px' }">
-                剩 {{ fmtDur(left(i)) }}
-              </div>
-              <div v-if="i.renewedAt" style="color:var(--sub);font-size:12px">已续用</div>
+              <template v-if="i.status === 'creating' || !i.expiresAt || i.expiresAt < '2000-'">
+                <span style="color:var(--sub)">创建完成后起算</span>
+              </template>
+              <template v-else>
+                {{ fmtTime(i.expiresAt) }}
+                <div v-if="i.status === 'running'" :style="{ color: left(i) < 600 ? 'var(--err)' : 'var(--sub)', fontSize: '12px' }">
+                  剩 {{ fmtDur(left(i)) }}
+                </div>
+                <div v-if="i.renewedAt" style="color:var(--sub);font-size:12px">已续用</div>
+              </template>
             </td>
             <td style="white-space:nowrap">
               <button v-if="canRenew(i)" class="ghost mini" @click="renew(i.id)">续用 1 小时</button>
