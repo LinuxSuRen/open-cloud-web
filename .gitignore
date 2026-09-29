@@ -8,7 +8,7 @@ data/
 *.db-wal
 
 # 构建产物
-ocw
+/ocw
 /dist/
 
 # 前端
