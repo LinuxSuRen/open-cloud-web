@@ -341,9 +341,9 @@ func (r *runner) apply(ctx context.Context, wsDir string, env []string) error {
 	dec := json.NewDecoder(stdout)
 	for {
 		var msg struct {
-			Level      string `json:"@level"`
-			Type       string `json:"type"`
-			Hook       *struct {
+			Level string `json:"@level"`
+			Type  string `json:"type"`
+			Hook  *struct {
 				Resource *struct {
 					Addr string `json:"addr"`
 				} `json:"resource"`

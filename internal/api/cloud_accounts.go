@@ -241,11 +241,11 @@ func (h *Handler) runnerForAccountLog(accountID int64, onLog func(string)) (Runn
 		return nil, nil, err
 	}
 	runner := h.NewRunner(a.Provider, a.AccessKey, secret, nil)
-		if onLog != nil {
-			// 有日志回调时重建带回调的 runner（销毁路径暂不需要过程日志）。
-			runner = h.NewRunner(a.Provider, a.AccessKey, secret, onLog)
-		}
-		return runner, a, nil
+	if onLog != nil {
+		// 有日志回调时重建带回调的 runner（销毁路径暂不需要过程日志）。
+		runner = h.NewRunner(a.Provider, a.AccessKey, secret, onLog)
+	}
+	return runner, a, nil
 }
 
 // loadAccountRunner 为实例创建构造 Runner（含归属校验）。
