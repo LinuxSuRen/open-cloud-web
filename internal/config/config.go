@@ -3,6 +3,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strconv"
@@ -32,6 +34,7 @@ type Config struct {
 	VolcengineSecretKey  string //
 	CORSAllowedOrigin    string // 允许的 CORS Origin（空表示不加 CORS 头）
 	SecretKey            string // 云账号 Secret 的 AES 加密密钥（空回落 JWTSecret）
+	JWTSecretGenerated   bool   // JWT_SECRET 未设置时自动生成了临时随机值（开发模式）
 }
 
 // Defaults 返回带默认值的配置（不读环境变量）。
@@ -100,9 +103,18 @@ func Load() (Config, error) {
 		return cfg, fmt.Errorf("config: SchedulerIntervalSec must be > 0, got %d", cfg.SchedulerIntervalSec)
 	}
 	// JWT secret 是认证体系的根：空/过短 secret 下任何人都能离线伪造
-	// admin JWT（HS256），属于完全认证绕过，必须在启动时拒绝。
-	if len(cfg.JWTSecret) < 16 {
-		return cfg, fmt.Errorf("config: JWT_SECRET must be set and at least 16 bytes (got %d)", len(cfg.JWTSecret))
+	// admin JWT（HS256），属于完全认证绕过。
+	// 未设置时自动生成一次性随机 secret（重启后会话失效，仅适合开发）；
+	// 显式设置但过短则拒绝启动。
+	if cfg.JWTSecret == "" {
+		buf := make([]byte, 32)
+		if _, err := rand.Read(buf); err != nil {
+			return cfg, fmt.Errorf("config: generate jwt secret: %w", err)
+		}
+		cfg.JWTSecret = hex.EncodeToString(buf)
+		cfg.JWTSecretGenerated = true
+	} else if len(cfg.JWTSecret) < 16 {
+		return cfg, fmt.Errorf("config: JWT_SECRET must be at least 16 bytes (got %d)", len(cfg.JWTSecret))
 	}
 	return cfg, nil
 }

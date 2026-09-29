@@ -13,7 +13,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -41,9 +43,25 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if cfg.JWTSecretGenerated {
+		log.Printf("[ocw] warning: OCW_JWT_SECRET 未设置，已生成临时随机值（重启后登录会话失效；生产环境请显式设置）")
+		// 零配置开发模式：同时给 admin 引导口令一个默认值，否则无任何登录途径。
+		if cfg.AdminBootstrapToken == "" {
+			cfg.AdminBootstrapToken = "admin12345"
+			log.Printf("[ocw] warning: OCW_ADMIN_BOOTSTRAP_TOKEN 未设置，开发模式默认 admin/admin12345（生产环境务必显式设置强口令）")
+		}
+	}
 	log.Printf("[ocw] starting: listen=%s db=%s dataDir=%s", cfg.ListenAddr, cfg.DBPath, cfg.DataDir)
 
-	// 2. 存储（SQLite，契约见 ARCHITECTURE.md store.Store）。
+	// 2. 存储（契约见 ARCHITECTURE.md store.Store）；自动创建数据目录。
+	if dir := filepath.Dir(cfg.DBPath); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("create data dir %s: %w", dir, err)
+		}
+	}
+	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+		return fmt.Errorf("create data dir %s: %w", cfg.DataDir, err)
+	}
 	st, err := store.OpenSQLitePath(cfg.DBPath)
 	if err != nil {
 		return err

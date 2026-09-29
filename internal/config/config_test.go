@@ -140,3 +140,14 @@ func TestLoadRejectsShortJWTSecret(t *testing.T) {
 		t.Fatal("短 JWT_SECRET 应当拒绝启动")
 	}
 }
+
+func TestLoadGeneratesJWTSecret(t *testing.T) {
+	setEnv(t, nil) // 完全不设置：应自动生成随机 secret
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load(): %v", err)
+	}
+	if len(cfg.JWTSecret) < 32 || !cfg.JWTSecretGenerated {
+		t.Fatalf("应自动生成随机 secret: len=%d generated=%v", len(cfg.JWTSecret), cfg.JWTSecretGenerated)
+	}
+}
