@@ -9,8 +9,11 @@ package cloud
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/linuxsuren/open-cloud-web/internal/model"
 )
@@ -25,6 +28,8 @@ type Provider interface {
 	ListRegions(ctx context.Context) ([]string, error)
 	// ListZones 列出指定地域下的可用区（创建实例必填 zone）。
 	ListZones(ctx context.Context, region string) ([]string, error)
+	// SetProxy 为该 provider 的 OpenAPI 调用设置 HTTP(S) 代理（空串=直连）。
+	SetProxy(proxy string) error
 }
 
 // APIError 云 OpenAPI 返回的业务错误（透传 API 错误码）。
@@ -89,4 +94,23 @@ func resetRegistry() {
 	registry.Lock()
 	defer registry.Unlock()
 	registry.providers = map[string]Provider{}
+}
+
+// SetProxy 为该 provider 的全部 OpenAPI 调用设置 HTTP(S) 代理。
+// 空串表示清除（直连）。网络受限环境下云 API 与 provider 下载可能
+// 都需要代理出网。
+func setProxyOn(c **http.Client, proxy string) error {
+	if proxy == "" {
+		*c = &http.Client{Timeout: httpClientTimeout * time.Second}
+		return nil
+	}
+	u, err := url.Parse(proxy)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("cloud: invalid proxy %q", proxy)
+	}
+	*c = &http.Client{
+		Timeout:   httpClientTimeout * time.Second,
+		Transport: &http.Transport{Proxy: http.ProxyURL(u)},
+	}
+	return nil
 }

@@ -47,6 +47,9 @@ func NewAlicloudProvider(ak, sk string) *AlicloudProvider {
 	}
 }
 
+// SetProxy 为该 provider 的 OpenAPI 调用设置 HTTP(S) 代理（空串=直连）。
+func (p *AlicloudProvider) SetProxy(proxy string) error { return setProxyOn(&p.httpClient, proxy) }
+
 func (p *AlicloudProvider) Name() string { return "alicloud" }
 
 const alicloudAPIVersion = "2014-05-26" // ECS API 版本

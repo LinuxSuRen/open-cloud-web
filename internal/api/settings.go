@@ -8,7 +8,20 @@ import (
 	"strings"
 )
 
-const settingProxyKey = "tofu_proxy"
+// SettingProxyKey 是系统 HTTP 代理设置的存储键；作用于云 API 调用
+// 与 tofu 子进程出网。旧键 tofu_proxy 作为取值回退（升级兼容）。
+const (
+	SettingProxyKey    = "http_proxy"
+	settingProxyKeyOld = "tofu_proxy"
+)
+
+func (h *Handler) proxySetting() string {
+	v, _ := h.Store.GetSetting(SettingProxyKey)
+	if v == "" {
+		v, _ = h.Store.GetSetting(settingProxyKeyOld)
+	}
+	return v
+}
 
 type settingsResp struct {
 	ProxyURL string `json:"proxyURL"`
@@ -16,8 +29,7 @@ type settingsResp struct {
 
 // GET /api/v1/admin/settings
 func (h *Handler) getSettings(w http.ResponseWriter, r *http.Request) {
-	proxy, _ := h.Store.GetSetting(settingProxyKey)
-	writeJSON(w, http.StatusOK, settingsResp{ProxyURL: proxy})
+	writeJSON(w, http.StatusOK, settingsResp{ProxyURL: h.proxySetting()})
 }
 
 type settingsReq struct {
@@ -41,12 +53,11 @@ func (h *Handler) putSettings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if err := h.Store.SetSetting(settingProxyKey, v); err != nil {
+		if err := h.Store.SetSetting(SettingProxyKey, v); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save setting")
 			return
 		}
-		h.audit(auth.UserFromContext(r.Context()).ID, "settings.update", "tofu_proxy="+v)
+		h.audit(auth.UserFromContext(r.Context()).ID, "settings.update", "http_proxy="+v)
 	}
-	proxy, _ := h.Store.GetSetting(settingProxyKey)
-	writeJSON(w, http.StatusOK, settingsResp{ProxyURL: proxy})
+	writeJSON(w, http.StatusOK, settingsResp{ProxyURL: h.proxySetting()})
 }

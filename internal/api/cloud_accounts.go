@@ -205,12 +205,24 @@ func (h *Handler) accountProvider(w http.ResponseWriter, r *http.Request) (cloud
 		writeError(w, http.StatusInternalServerError, "failed to decrypt secret")
 		return nil, false
 	}
+	var p cloud.Provider
 	switch a.Provider {
 	case "alicloud":
-		return cloud.NewAlicloudProvider(a.AccessKey, secret), true
+		p = cloud.NewAlicloudProvider(a.AccessKey, secret)
 	case "volcengine":
-		return cloud.NewVolcengineProvider(a.AccessKey, secret), true
+		p = cloud.NewVolcengineProvider(a.AccessKey, secret)
+	default:
+		writeError(w, http.StatusBadRequest, "unknown provider: "+a.Provider)
+		return nil, false
 	}
+	// 应用系统级 HTTP 代理设置（admin 可在控制台配置）。
+	if proxy, _ := h.Store.GetSetting(SettingProxyKey); proxy != "" {
+		if err := p.SetProxy(proxy); err != nil {
+			writeError(w, http.StatusInternalServerError, "invalid proxy setting: "+err.Error())
+			return nil, false
+		}
+	}
+	return p, true
 	writeError(w, http.StatusBadRequest, "unknown provider: "+a.Provider)
 	return nil, false
 }

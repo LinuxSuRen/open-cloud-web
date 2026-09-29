@@ -54,6 +54,9 @@ func NewVolcengineProvider(ak, sk string) *VolcengineProvider {
 	}
 }
 
+// SetProxy 为该 provider 的 OpenAPI 调用设置 HTTP(S) 代理（空串=直连）。
+func (p *VolcengineProvider) SetProxy(proxy string) error { return setProxyOn(&p.httpClient, proxy) }
+
 func (p *VolcengineProvider) Name() string { return "volcengine" }
 
 // ListImages 调用 DescribeImages（公共镜像）。
