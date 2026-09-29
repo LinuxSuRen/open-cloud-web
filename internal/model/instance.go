@@ -82,7 +82,9 @@ type Instance struct {
 	DurationSec    int64          `json:"durationSec"`         // 本次申请时长
 	PublicIP       string         `json:"publicIP"`
 	PrivateIP      string         `json:"privateIP"`
-	TfWorkspace    string         `json:"tfWorkspace"` // OpenTofu state 工作目录名
+	TfWorkspace    string         `json:"tfWorkspace"`        // OpenTofu state 工作目录名
+	PasswordEnc    string         `json:"-"`                  // SSH 密码（AES 加密存储）
+	Password       string         `json:"password,omitempty"` // 仅在创建响应/详情解密后填充
 	ErrorMessage   string         `json:"errorMessage,omitempty"`
 	CreatedAt      time.Time      `json:"createdAt"`
 	UpdatedAt      time.Time      `json:"updatedAt"`

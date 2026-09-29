@@ -59,3 +59,10 @@ variable "session_token" {
   sensitive   = true
   default     = ""
 }
+
+variable "password" {
+  description = "ECS 实例登录密码（不填则由平台自动生成）"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

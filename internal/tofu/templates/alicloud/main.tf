@@ -63,6 +63,7 @@ resource "alicloud_instance" "this" {
   internet_charge_type = "PayByTraffic"
   # 公网带宽（Mbps）；>0 时阿里云自动分配公网 IP。
   internet_max_bandwidth_out = var.public_bandwidth
+  password                   = var.password # SSH 登录密码（平台自动生成或用户指定）
 }
 
 output "public_ip" {
@@ -71,4 +72,9 @@ output "public_ip" {
 
 output "private_ip" {
   value = alicloud_instance.this.private_ip
+}
+
+output "password" {
+  value     = var.password
+  sensitive = true
 }

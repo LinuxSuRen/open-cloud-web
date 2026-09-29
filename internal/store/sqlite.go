@@ -143,6 +143,7 @@ var migrations = []struct{ table, column, ddl string }{
 	{"users", "password_hash", "ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''"},
 	{"instances", "cloud_account_id", "ALTER TABLE instances ADD COLUMN cloud_account_id INTEGER NOT NULL DEFAULT 0"},
 	{"cloud_accounts", "session_enc", "ALTER TABLE cloud_accounts ADD COLUMN session_enc TEXT NOT NULL DEFAULT ''"},
+	{"instances", "password_enc", "ALTER TABLE instances ADD COLUMN password_enc TEXT NOT NULL DEFAULT ''"},
 }
 
 func (s *SQLiteStore) migrate() error {
@@ -423,7 +424,7 @@ func (s *SQLiteStore) TouchPAT(id int64, usedAt time.Time) error {
 // ---------- instance ----------
 
 const instanceCols = `id, user_id, cloud_account_id, name, provider, region, zone, image_id, instance_type, status,
-expires_at, renewed_at, duration_sec, public_ip, private_ip, tf_workspace, error_message, created_at, updated_at`
+expires_at, renewed_at, duration_sec, public_ip, private_ip, tf_workspace, password_enc, error_message, created_at, updated_at`
 
 func scanInstance(row interface{ Scan(...any) error }) (*model.Instance, error) {
 	var in model.Instance
@@ -431,7 +432,7 @@ func scanInstance(row interface{ Scan(...any) error }) (*model.Instance, error) 
 	var renewedAt sql.NullString
 	err := row.Scan(&in.ID, &in.UserID, &in.CloudAccountID, &in.Name, &in.Provider, &in.Region, &in.Zone,
 		&in.ImageID, &in.InstanceType, &status, &expiresAt, &renewedAt, &in.DurationSec,
-		&in.PublicIP, &in.PrivateIP, &in.TfWorkspace, &in.ErrorMessage, &createdAt, &updatedAt)
+		&in.PublicIP, &in.PrivateIP, &in.TfWorkspace, &in.PasswordEnc, &in.ErrorMessage, &createdAt, &updatedAt)
 	if errorsIs(err) {
 		return nil, ErrNotFound
 	}
@@ -484,11 +485,11 @@ func (s *SQLiteStore) CreateInstance(in *model.Instance) error {
 	}
 	res, err := s.db.Exec(
 		`INSERT INTO instances (user_id, cloud_account_id, name, provider, region, zone, image_id, instance_type, status,
-			expires_at, renewed_at, duration_sec, public_ip, private_ip, tf_workspace, error_message, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			expires_at, renewed_at, duration_sec, public_ip, private_ip, tf_workspace, password_enc, error_message, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		in.UserID, in.CloudAccountID, in.Name, in.Provider, in.Region, in.Zone, in.ImageID, in.InstanceType,
 		string(in.Status), fmtTime(in.ExpiresAt), renewedAt, in.DurationSec,
-		in.PublicIP, in.PrivateIP, in.TfWorkspace, in.ErrorMessage, fmtTime(in.CreatedAt), fmtTime(in.UpdatedAt),
+		in.PublicIP, in.PrivateIP, in.TfWorkspace, in.PasswordEnc, in.ErrorMessage, fmtTime(in.CreatedAt), fmtTime(in.UpdatedAt),
 	)
 	if err != nil {
 		return fmt.Errorf("store: create instance: %w", err)
@@ -569,11 +570,11 @@ func (s *SQLiteStore) UpdateInstance(in *model.Instance) error {
 	}
 	res, err := s.db.Exec(
 		`UPDATE instances SET user_id=?, cloud_account_id=?, name=?, provider=?, region=?, zone=?, image_id=?, instance_type=?,
-		 status=?, expires_at=?, renewed_at=?, duration_sec=?, public_ip=?, private_ip=?, tf_workspace=?,
+		 status=?, expires_at=?, renewed_at=?, duration_sec=?, public_ip=?, private_ip=?, tf_workspace=?, password_enc=?,
 		 error_message=?, updated_at=? WHERE id=?`,
 		in.UserID, in.CloudAccountID, in.Name, in.Provider, in.Region, in.Zone, in.ImageID, in.InstanceType,
 		string(in.Status), fmtTime(in.ExpiresAt), renewedAt, in.DurationSec,
-		in.PublicIP, in.PrivateIP, in.TfWorkspace, in.ErrorMessage, fmtTime(in.UpdatedAt), in.ID,
+		in.PublicIP, in.PrivateIP, in.TfWorkspace, in.PasswordEnc, in.ErrorMessage, fmtTime(in.UpdatedAt), in.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("store: update instance %d: %w", in.ID, err)

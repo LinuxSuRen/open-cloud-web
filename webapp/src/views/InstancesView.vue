@@ -6,7 +6,7 @@ const instances = ref([])
 const accounts = ref([])
 const form = reactive({
   accountID: null, region: '', zone: '', imageID: '',
-  instanceType: '', durationSec: null, name: '',
+  instanceType: '', durationSec: null, name: '', password: '',
 })
 const catalog = reactive({ regions: [], zones: [], images: [], types: [], loading: '' })
 const busy = ref(false)
@@ -112,6 +112,7 @@ async function create() {
       instanceType: form.instanceType,
       durationSec: Number(form.durationSec) || 0,
       name: form.name.trim(),
+      password: form.password || '',
     })
     await load()
   } catch (e) {
@@ -167,6 +168,14 @@ async function refreshLog() {
       logTimer = null
     }
   } catch { /* 下轮重试 */ }
+}
+
+async function showPassword(i) {
+  try {
+    const d = await api('GET', `/api/v1/instances/${i.id}`)
+    const pwd = d.password || '（未设置）'
+    prompt(`SSH 登录信息\n\n主机: ${i.publicIP}\n用户: root\n密码:`, pwd)
+  } catch (e) { alert(e.message) }
 }
 
 function closeLog() {
@@ -243,6 +252,9 @@ const accountName = (id) => accounts.value.find((a) => a.id === id)?.name || `#$
         <label>名称（可选）
           <input v-model="form.name" placeholder="自动生成" style="width:130px" />
         </label>
+        <label>SSH 密码（留空自动生成）
+          <input v-model="form.password" type="password" placeholder="自动生成" style="width:130px" />
+        </label>
         <button class="btn" :disabled="busy || !form.imageID || !form.instanceType || !form.zone" @click="create">
           {{ busy ? '创建中…' : '创建' }}
         </button>
@@ -289,6 +301,10 @@ const accountName = (id) => accounts.value.find((a) => a.id === id)?.name || `#$
             <td class="mono">
               <a v-if="i.publicIP" :href="'http://' + i.publicIP" target="_blank">{{ i.publicIP }}</a>
               <template v-else>—</template>
+              <button
+                v-if="i.status === 'running' && i.publicIP"
+                class="ghost mini" style="margin-left:4px" title="查看 SSH 密码"
+                @click="showPassword(i)">🔑</button>
             </td>
             <td>
               <template v-if="i.status === 'creating' || !i.expiresAt || i.expiresAt < '2000-'">

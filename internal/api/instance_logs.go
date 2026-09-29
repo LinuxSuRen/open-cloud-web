@@ -60,3 +60,15 @@ func (h *Handler) instanceLogs(w http.ResponseWriter, r *http.Request) {
 		"id": inst.ID, "status": inst.Status, "log": h.ILogs.Get(inst.ID),
 	})
 }
+
+// instPassword 解密实例 SSH 密码（apply 注入 tfvars 与详情展示用）。
+func (h *Handler) instPassword(inst *Instance) string {
+	if inst.PasswordEnc == "" {
+		return ""
+	}
+	pwd, err := decryptSecret(inst.PasswordEnc, h.Cfg.SecretKey)
+	if err != nil {
+		return ""
+	}
+	return pwd
+}

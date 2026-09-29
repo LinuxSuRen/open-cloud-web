@@ -27,6 +27,44 @@ type createInstanceReq struct {
 	InstanceType   string `json:"instanceType"`
 	DurationSec    int64  `json:"durationSec"`
 	Name           string `json:"name"`
+	Password       string `json:"password"` // SSH 密码，留空自动生成
+}
+
+// generatePassword 生成云厂商合规的强密码（大小写+数字+特殊字符，16 位；
+// 避开引号/反斜杠/美元等易转义出错的字符）。
+func generatePassword() (string, error) {
+	const (
+		upper   = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+		lower   = "abcdefghijkmnpqrstuvwxyz"
+		digits  = "23456789"
+		special = "!@#%^*()-_=+"
+	)
+	all := upper + lower + digits + special
+	out := make([]byte, 16)
+	// 保证每类至少一个。
+	for i, set := range []string{upper, lower, digits, special} {
+		b, err := randByte(set)
+		if err != nil {
+			return "", err
+		}
+		out[i] = b
+	}
+	for i := 4; i < len(out); i++ {
+		b, err := randByte(all)
+		if err != nil {
+			return "", err
+		}
+		out[i] = b
+	}
+	return string(out), nil
+}
+
+func randByte(set string) (byte, error) {
+	var b [1]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return 0, err
+	}
+	return set[int(b[0])%len(set)], nil
 }
 
 var validProviders = map[string]bool{"alicloud": true, "volcengine": true}
@@ -62,6 +100,25 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.CloudAccountID <= 0 {
 		writeError(w, http.StatusBadRequest, "cloudAccountID is required (add a cloud account first)")
+		return
+	}
+	// SSH 密码：用户指定或自动生成；加密落库，响应返回明文一次。
+	password := req.Password
+	var pwErr error
+	if password == "" {
+		password, pwErr = generatePassword()
+		if pwErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to generate password")
+			return
+		}
+	}
+	var pwdEnc string
+	if pwdEnc, pwErr = encryptSecret(password, h.Cfg.SecretKey); pwErr != nil {
+		writeError(w, http.StatusInternalServerError, "failed to encrypt password")
+		return
+	}
+	if len(password) < 8 || len(password) > 64 {
+		writeError(w, http.StatusBadRequest, "password must be 8-64 chars")
 		return
 	}
 	var instRef *Instance // 闭包按引用捕获，CreateInstance 后即有值
@@ -129,6 +186,7 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 		Status:         StatusCreating,
 		DurationSec:    duration,
 		TfWorkspace:    "inst-" + randHex(8),
+		PasswordEnc:    pwdEnc,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -137,6 +195,7 @@ func (h *Handler) createInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	instRef = inst
+	inst.Password = password // 仅随本次响应返回明文
 	h.ILogs.Append(inst.ID, "创建请求受理，开始准备 OpenTofu 工作区（provider 未缓存时先下载）…")
 	h.audit(u.ID, "instance.create", fmt.Sprintf("id=%d account=%d(%s) provider=%s region=%s duration=%ds", inst.ID, account.ID, account.Name, inst.Provider, inst.Region, inst.DurationSec))
 	go h.applyInstance(runner, inst)
@@ -157,6 +216,7 @@ func (h *Handler) applyInstance(runner Runner, inst *Instance) {
 		"instance_type":    inst.InstanceType,
 		"instance_name":    inst.Name,
 		"public_bandwidth": "5",
+		"password":         h.instPassword(inst),
 	}
 	done := make(chan error, 1)
 	go func() { done <- runner.Apply(ctx, inst.TfWorkspace, vars) }()
@@ -329,6 +389,8 @@ func (h *Handler) getInstance(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// 详情页展示 SSH 密码（仅所有者/admin 可见该端点）。
+	inst.Password = h.instPassword(inst)
 	writeJSON(w, http.StatusOK, inst)
 }
 

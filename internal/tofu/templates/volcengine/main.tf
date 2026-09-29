@@ -62,6 +62,7 @@ resource "volcengine_ecs_instance" "this" {
   instance_charge_type = "PostPaid"
   system_volume_type   = var.system_volume_type
   system_volume_size   = var.system_volume_size
+  password             = var.password # SSH 登录密码（平台自动生成或用户指定）
 }
 
 # 公网 IP：按流量计费的 EIP 并绑定到 ECS 实例。
@@ -82,4 +83,9 @@ output "public_ip" {
 
 output "private_ip" {
   value = try(volcengine_ecs_instance.this.primary_ip_address, "")
+}
+
+output "password" {
+  value     = var.password
+  sensitive = true
 }
