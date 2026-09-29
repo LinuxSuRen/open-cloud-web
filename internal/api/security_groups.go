@@ -38,8 +38,8 @@ func (h *Handler) listSecurityGroups(w http.ResponseWriter, r *http.Request) {
 }
 
 type createSGReq struct {
-	Name  string `json:"name"`
-	Ports []int  `json:"ports"`
+	Name   string `json:"name"`
+	Ports  []int  `json:"ports"`
 	Remark string `json:"remark"`
 }
 

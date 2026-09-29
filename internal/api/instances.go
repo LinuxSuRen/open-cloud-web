@@ -22,15 +22,15 @@ const maxConcurrentCreating = 5
 const applyTimeout = 30 * time.Minute
 
 type createInstanceReq struct {
-	CloudAccountID  int64  `json:"cloudAccountID"` // 必填：用户添加的云账号
+	CloudAccountID  int64  `json:"cloudAccountID"`  // 必填：用户添加的云账号
 	SecurityGroupID int64  `json:"securityGroupID"` // 端口集合；0=取第一个可用分组
-	Region         string `json:"region"`
-	Zone           string `json:"zone"`
-	ImageID        string `json:"imageID"`
-	InstanceType   string `json:"instanceType"`
-	DurationSec    int64  `json:"durationSec"`
-	Name           string `json:"name"`
-	Password       string `json:"password"` // SSH 密码，留空自动生成
+	Region          string `json:"region"`
+	Zone            string `json:"zone"`
+	ImageID         string `json:"imageID"`
+	InstanceType    string `json:"instanceType"`
+	DurationSec     int64  `json:"durationSec"`
+	Name            string `json:"name"`
+	Password        string `json:"password"` // SSH 密码，留空自动生成
 }
 
 // generatePassword 生成云厂商合规的强密码（大小写+数字+特殊字符，16 位；
