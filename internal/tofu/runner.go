@@ -170,6 +170,10 @@ func providerRegistryNS(provider string) (string, string, bool) {
 		return "aliyun", "alicloud", true
 	case "volcengine":
 		return "volcengine", "volcengine", true
+	case "tencentcloud":
+		return "tencentcloudstack", "tencentcloud", true
+	case "huaweicloud":
+		return "huaweicloud", "huaweicloud", true
 	}
 	return "", "", false
 }
@@ -523,7 +527,7 @@ func clip(s string, n int) string {
 // Preload 仅执行模板准备与 `tofu init`：把 provider 插件下载进共享缓存，
 // 不创建任何云资源（用于控制台预下载与状态展示）。
 func (r *runner) Preload(ctx context.Context, provider string, progress io.Writer) error {
-	if provider != "alicloud" && provider != "volcengine" {
+	if _, _, ok := providerRegistryNS(provider); !ok {
 		return fmt.Errorf("tofu: unknown provider %q", provider)
 	}
 	r.mu.Lock()

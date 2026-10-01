@@ -82,6 +82,8 @@ const PROV = { alicloud: '阿里云', volcengine: '火山引擎' }
           <select v-model="form.provider">
             <option value="alicloud">阿里云</option>
             <option value="volcengine">火山引擎</option>
+            <option value="tencentcloud">腾讯云</option>
+            <option value="huaweicloud">华为云</option>
           </select>
         </label>
         <label>AccessKey ID <input v-model="form.accessKey" style="width:220px" /></label>

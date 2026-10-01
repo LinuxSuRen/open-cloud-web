@@ -122,6 +122,12 @@ async function save() {
         <button class="ghost mini" :disabled="!!preloading" @click="preload('volcengine')">
           {{ preloading === 'volcengine' ? '下载中…（包较大）' : '预下载 火山引擎' }}
         </button>
+        <button class="ghost mini" :disabled="!!preloading" @click="preload('tencentcloud')">
+          {{ preloading === 'tencentcloud' ? '下载中…（包较大）' : '预下载 腾讯云' }}
+        </button>
+        <button class="ghost mini" :disabled="!!preloading" @click="preload('huaweicloud')">
+          {{ preloading === 'huaweicloud' ? '下载中…（包较大）' : '预下载 华为云' }}
+        </button>
       </h2>
       <table>
         <thead><tr><th>Provider</th><th>版本</th><th>平台</th><th>大小</th><th>下载时间</th></tr></thead>
@@ -140,7 +146,7 @@ async function save() {
 
       <div v-for="(job, name) in jobs" :key="name" style="margin-top:14px">
         <h3 style="font-size:13px;margin-bottom:6px">
-          {{ { alicloud: '阿里云', volcengine: '火山引擎' }[name] || name }} 下载任务
+          {{ { alicloud: '阿里云', volcengine: '火山引擎', tencentcloud: '腾讯云', huaweicloud: '华为云' }[name] || name }} 下载任务
           <span class="tag" :class="job.status === 'running' ? 't-creating' : job.status === 'success' ? 't-running' : 't-failed'">
             {{ { running: '下载中…', success: '成功', failed: '失败' }[job.status] || job.status }}
           </span>

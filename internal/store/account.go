@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/linuxsuren/open-cloud-web/internal/cloud"
 	"github.com/linuxsuren/open-cloud-web/internal/model"
 )
 
@@ -30,9 +31,7 @@ func scanAccount(row interface{ Scan(...any) error }) (*model.CloudAccount, erro
 	return &a, nil
 }
 
-func validProvider(p string) bool {
-	return p == "alicloud" || p == "volcengine"
-}
+func validProvider(p string) bool { return cloud.IsValidProvider(p) }
 
 func (s *SQLiteStore) CreateCloudAccount(a *model.CloudAccount) error {
 	if a == nil || a.UserID <= 0 {

@@ -47,6 +47,34 @@ func (e *APIError) Error() string {
 // pageSize 三个查询接口统一分页大小：只取第一页（前 100 条）。
 const pageSize = 100
 
+// SupportedProviders 全部受支持的云提供商（唯一事实源，其它包引用此处）。
+var SupportedProviders = []string{"alicloud", "volcengine", "tencentcloud", "huaweicloud"}
+
+// IsValidProvider 报告 name 是否为受支持的云提供商。
+func IsValidProvider(name string) bool {
+	for _, p := range SupportedProviders {
+		if p == name {
+			return true
+		}
+	}
+	return false
+}
+
+// ProviderDisplayName 返回展示名（控制台/API 文档用）。
+func ProviderDisplayName(name string) string {
+	switch name {
+	case "alicloud":
+		return "阿里云"
+	case "volcengine":
+		return "火山引擎"
+	case "tencentcloud":
+		return "腾讯云"
+	case "huaweicloud":
+		return "华为云"
+	}
+	return name
+}
+
 // httpClientTimeout 所有 OpenAPI 调用的 HTTP 客户端超时（5s）。
 const httpClientTimeout = 5
 
