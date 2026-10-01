@@ -42,7 +42,7 @@ export function fmtTime(t) {
   return isNaN(d) ? '—' : d.toLocaleString('zh-CN', { hour12: false })
 }
 
-export const PROV_NAME = { alicloud: '阿里云', volcengine: '火山引擎' }
+export const PROV_NAME = { alicloud: '阿里云', volcengine: '火山引擎', tencentcloud: '腾讯云', huaweicloud: '华为云' }
 export const ST_NAME = { creating: '创建中', running: '运行中', destroying: '销毁中', destroyed: '已销毁', failed: '失败' }
 
 // connectWS 建立 /api/v1/ws 推送连接（token 走查询参数）。

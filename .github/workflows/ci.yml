@@ -48,7 +48,7 @@ jobs:
           # ~ 不会被 tofu 展开，须用 $HOME 并先建目录
           export TF_PLUGIN_CACHE_DIR="$HOME/.cache/tofu-plugin-cache"
           mkdir -p "$TF_PLUGIN_CACHE_DIR"
-          for t in alicloud volcengine; do
+          for t in alicloud volcengine tencentcloud huaweicloud; do
             echo "== $t =="
             (cd "internal/tofu/templates/$t" \
               && tofu init -backend=false -input=false -no-color \

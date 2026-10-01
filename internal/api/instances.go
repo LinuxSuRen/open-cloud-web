@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/linuxsuren/open-cloud-web/internal/auth"
+	"github.com/linuxsuren/open-cloud-web/internal/cloud"
 	"github.com/linuxsuren/open-cloud-web/internal/model"
 )
 
@@ -70,7 +71,13 @@ func randByte(set string) (byte, error) {
 	return set[int(b[0])%len(set)], nil
 }
 
-var validProviders = map[string]bool{"alicloud": true, "volcengine": true}
+var validProviders = func() map[string]bool {
+	m := map[string]bool{}
+	for _, p := range cloud.SupportedProviders {
+		m[p] = true
+	}
+	return m
+}()
 
 // durationCap 计算用户单次时长上限：min(用户 MaxDurationSec(>0 时), cfg.MaxDurationSec)；<=0 表示不限制。
 func (h *Handler) durationCap(u *auth.User) int64 {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/linuxsuren/open-cloud-web/internal/auth"
 	"github.com/linuxsuren/open-cloud-web/internal/cloud"
@@ -58,8 +59,9 @@ func (h *Handler) createAccount(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name must be 1-64 chars")
 		return
 	}
-	if req.Provider != "alicloud" && req.Provider != "volcengine" {
-		writeError(w, http.StatusBadRequest, "provider must be alicloud or volcengine")
+	if !cloud.IsValidProvider(req.Provider) {
+		writeError(w, http.StatusBadRequest, "unsupported provider: "+req.Provider+
+			" (supported: "+strings.Join(cloud.SupportedProviders, ", ")+")")
 		return
 	}
 	if req.AccessKey == "" || len(req.SecretKey) < 8 || len(req.SecretKey) > maxKeyName {
@@ -230,12 +232,27 @@ func (h *Handler) accountProvider(w http.ResponseWriter, r *http.Request) (cloud
 		writeError(w, http.StatusInternalServerError, "failed to decrypt secret")
 		return nil, false
 	}
+	session := ""
+	if a.SessionEnc != "" {
+		if session, err = decryptSecret(a.SessionEnc, h.Cfg.SecretKey); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to decrypt session token")
+			return nil, false
+		}
+	}
 	var p cloud.Provider
 	switch a.Provider {
 	case "alicloud":
 		p = cloud.NewAlicloudProvider(a.AccessKey, secret)
 	case "volcengine":
 		p = cloud.NewVolcengineProvider(a.AccessKey, secret)
+	case "tencentcloud":
+		tc := cloud.NewTencentCloudProvider(a.AccessKey, secret)
+		tc.SetSessionToken(session)
+		p = tc
+	case "huaweicloud":
+		hw := cloud.NewHuaweiCloudProvider(a.AccessKey, secret)
+		hw.SetSessionToken(session)
+		p = hw
 	default:
 		writeError(w, http.StatusBadRequest, "unknown provider: "+a.Provider)
 		return nil, false

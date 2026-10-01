@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/linuxsuren/open-cloud-web/internal/auth"
+	"github.com/linuxsuren/open-cloud-web/internal/cloud"
 	"github.com/linuxsuren/open-cloud-web/internal/tofu"
 )
 
@@ -95,8 +96,8 @@ func (h *Handler) preloadProvider(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if req.Provider != "alicloud" && req.Provider != "volcengine" {
-		writeError(w, http.StatusBadRequest, "provider must be alicloud or volcengine")
+	if !cloud.IsValidProvider(req.Provider) {
+		writeError(w, http.StatusBadRequest, "unsupported provider: "+req.Provider)
 		return
 	}
 	h.audit(auth.UserFromContext(r.Context()).ID, "provider.preload", req.Provider)
